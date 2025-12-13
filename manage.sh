@@ -196,6 +196,143 @@ run_with_elapsed_time() {
     fi
 }
 
+# Run pip install with real progress bar
+# Parses pip output to show download/install progress
+run_pip_with_progress() {
+    local description="$1"
+    shift
+    local cmd="$@"
+    local log_file=$(mktemp)
+    local progress_file=$(mktemp)
+    local pid
+    local start_time=$(date +%s)
+    local width=30
+    
+    # Start command in background, capturing output for parsing
+    eval "$cmd" 2>&1 | tee "$log_file" | while IFS= read -r line; do
+        # Look for pip progress indicators
+        if [[ "$line" =~ Downloading\ .*\ \(([0-9.]+)\ ([kMG]?B)\) ]]; then
+            echo "Downloading..." > "$progress_file"
+        elif [[ "$line" =~ Installing\ collected\ packages ]]; then
+            echo "Installing..." > "$progress_file"
+        elif [[ "$line" =~ Successfully\ installed ]]; then
+            echo "Done" > "$progress_file"
+        fi
+    done &
+    pid=$!
+    
+    # Show progress while command runs
+    local phase="Starting"
+    printf "        ${ARROW} %s " "$description"
+    while kill -0 $pid 2>/dev/null; do
+        local elapsed=$(($(date +%s) - start_time))
+        local mins=$((elapsed / 60))
+        local secs=$((elapsed % 60))
+        
+        # Read current phase if available
+        [ -f "$progress_file" ] && phase=$(cat "$progress_file" 2>/dev/null || echo "$phase")
+        
+        # Build animated bar
+        local anim_pos=$(( (elapsed * 2) % width ))
+        local bar=""
+        for ((i=0; i<width; i++)); do
+            if [ $i -eq $anim_pos ] || [ $i -eq $((anim_pos + 1)) ]; then
+                bar+="█"
+            else
+                bar+="░"
+            fi
+        done
+        
+        printf "\r        ${CYAN}[${bar}]${NC} %s ${DIM}(%dm %02ds)${NC}  " "$phase" $mins $secs
+        sleep 0.5
+    done
+    
+    # Get exit status
+    wait $pid
+    local exit_code=$?
+    local elapsed=$(($(date +%s) - start_time))
+    local mins=$((elapsed / 60))
+    local secs=$((elapsed % 60))
+    
+    # Cleanup
+    rm -f "$progress_file"
+    
+    # Clear line and show result
+    printf "\r%-80s\r" " "  # Clear the line
+    if [ $exit_code -eq 0 ]; then
+        echo -e "        ${CHECK} $description ${DIM}(${mins}m ${secs}s)${NC}"
+        rm -f "$log_file"
+        return 0
+    else
+        echo -e "        ${CROSS} ${RED}$description${NC} ${DIM}(${mins}m ${secs}s)${NC}"
+        echo -e "        ${DIM}Log output:${NC}"
+        tail -20 "$log_file" | sed 's/^/        /' 
+        rm -f "$log_file"
+        return 1
+    fi
+}
+
+# Run npm with animated progress bar
+run_npm_with_progress() {
+    local description="$1"
+    shift
+    local cmd="$@"
+    local log_file=$(mktemp)
+    local pid
+    local start_time=$(date +%s)
+    local width=30
+    
+    # Start command in background
+    eval "$cmd" > "$log_file" 2>&1 &
+    pid=$!
+    
+    # Show animated progress bar while command runs
+    printf "        ${ARROW} %s " "$description"
+    local i=0
+    while kill -0 $pid 2>/dev/null; do
+        local elapsed=$(($(date +%s) - start_time))
+        local mins=$((elapsed / 60))
+        local secs=$((elapsed % 60))
+        
+        # Build animated bar (bouncing effect)
+        local anim_pos=$(( i % (width * 2) ))
+        [ $anim_pos -ge $width ] && anim_pos=$((width * 2 - anim_pos - 1))
+        local bar=""
+        for ((j=0; j<width; j++)); do
+            if [ $j -ge $anim_pos ] && [ $j -lt $((anim_pos + 3)) ]; then
+                bar+="█"
+            else
+                bar+="░"
+            fi
+        done
+        
+        printf "\r        ${CYAN}[${bar}]${NC} %s ${DIM}(%dm %02ds)${NC}  " "$description" $mins $secs
+        sleep 0.1
+        ((i++))
+    done
+    
+    # Get exit status
+    wait $pid
+    local exit_code=$?
+    local elapsed=$(($(date +%s) - start_time))
+    local mins=$((elapsed / 60))
+    local secs=$((elapsed % 60))
+    
+    # Clear line and show result
+    printf "\r%-80s\r" " "  # Clear the line
+    if [ $exit_code -eq 0 ]; then
+        echo -e "        ${CHECK} $description ${DIM}(${mins}m ${secs}s)${NC}"
+        rm -f "$log_file"
+        return 0
+    else
+        echo -e "        ${CROSS} ${RED}$description${NC} ${DIM}(${mins}m ${secs}s)${NC}"
+        echo -e "        ${DIM}Log output:${NC}"
+        tail -30 "$log_file" | sed 's/^/        /' 
+        rm -f "$log_file"
+        return 1
+    fi
+}
+
 # Print installation banner
 print_banner() {
     clear
@@ -467,7 +604,7 @@ do_install() {
     # =========================================================================
     print_step 5 $total_steps "Installing pymc_core@$branch"
     
-    run_with_elapsed_time "Downloading and installing pymc_core" "pip install 'pymc_core[hardware] @ git+https://github.com/rightup/pyMC_core.git@$branch'" || {
+    run_npm_with_progress "Downloading and installing pymc_core" "pip install 'pymc_core[hardware] @ git+https://github.com/rightup/pyMC_core.git@$branch'" || {
         print_error "Failed to install pymc_core"
         print_info "Check if branch '$branch' exists and network is available"
         return 1
@@ -478,7 +615,7 @@ do_install() {
     # =========================================================================
     print_step 6 $total_steps "Installing pyMC_Repeater@$branch"
     
-    run_with_elapsed_time "Cloning repository" "git clone -b '$branch' https://github.com/rightup/pyMC_Repeater.git '$REPEATER_DIR'" || {
+    run_npm_with_progress "Cloning repository" "git clone -b '$branch' https://github.com/rightup/pyMC_Repeater.git '$REPEATER_DIR'" || {
         print_error "Failed to clone pyMC_Repeater"
         print_info "Check if branch '$branch' exists"
         return 1
@@ -486,7 +623,7 @@ do_install() {
     
     cd "$REPEATER_DIR"
     
-    run_with_elapsed_time "Installing Python package" "pip install -e ." || {
+    run_npm_with_progress "Installing Python package" "pip install -e ." || {
         print_error "Failed to install pyMC_Repeater package"
         return 1
     }
@@ -710,7 +847,7 @@ configure_radio_terminal() {
     echo -e "  ${DIM}Select a preset or choose custom to enter manual values${NC}"
     echo ""
     
-    # Fetch presets
+    # Fetch presets from API or local files
     local presets_json=""
     presets_json=$(curl -s --max-time 5 https://api.meshcore.nz/api/v1/config 2>/dev/null)
     
@@ -747,6 +884,26 @@ configure_radio_terminal() {
                 echo -e "  ${CYAN}$preset_count)${NC} $title ${DIM}(${freq}MHz SF$sf BW${bw}kHz)${NC}"
             fi
         done < <(echo "$presets_json" | jq -c '.[]' 2>/dev/null)
+    fi
+    
+    # If no presets loaded, show fallback options with descriptions
+    if [ $preset_count -eq 0 ]; then
+        echo -e "  ${YELLOW}Could not fetch presets from API. Showing common options:${NC}"
+        echo ""
+        # Fallback presets with common MeshCore configurations
+        preset_titles=("MeshCore USA" "MeshCore EU" "MeshCore UK" "MeshCore AU/NZ" "Long Range USA" "Long Range EU")
+        preset_freqs=("906.875" "869.525" "869.525" "917.0" "903.9" "869.4")
+        preset_sfs=("11" "11" "11" "11" "12" "12")
+        preset_bws=("250" "250" "250" "250" "125" "125")
+        preset_crs=("5" "5" "5" "5" "8" "8")
+        preset_count=${#preset_titles[@]}
+        
+        echo -e "  ${CYAN}1)${NC} MeshCore USA      ${DIM}(906.875MHz SF11 BW250kHz - Americas default)${NC}"
+        echo -e "  ${CYAN}2)${NC} MeshCore EU       ${DIM}(869.525MHz SF11 BW250kHz - Europe default)${NC}"
+        echo -e "  ${CYAN}3)${NC} MeshCore UK       ${DIM}(869.525MHz SF11 BW250kHz - UK ISM band)${NC}"
+        echo -e "  ${CYAN}4)${NC} MeshCore AU/NZ    ${DIM}(917.0MHz SF11 BW250kHz - Australia/NZ)${NC}"
+        echo -e "  ${CYAN}5)${NC} Long Range USA    ${DIM}(903.9MHz SF12 BW125kHz - Max range, slower)${NC}"
+        echo -e "  ${CYAN}6)${NC} Long Range EU     ${DIM}(869.4MHz SF12 BW125kHz - Max range, slower)${NC}"
     fi
     
     echo -e "  ${CYAN}C)${NC} Custom ${DIM}(enter values manually)${NC}"
@@ -790,7 +947,7 @@ configure_radio_terminal() {
         
         echo ""
         print_success "Radio: ${freq_mhz}MHz SF$sf BW${bw_khz}kHz CR$cr"
-    elif
+    elif [[ "$preset_choice" =~ ^[0-9]+$ ]] && [ "$preset_choice" -ge 1 ] && [ "$preset_choice" -le "$preset_count" ]; then
         # Use preset
         local idx=$((preset_choice - 1))
         freq_mhz="${preset_freqs[$idx]}"
@@ -1620,7 +1777,7 @@ EOF
     # Install npm dependencies
     cd "$FRONTEND_DIR"
     
-    run_with_elapsed_time "Installing npm dependencies" "$npm_path install --legacy-peer-deps" || {
+    run_npm_with_progress "Installing npm dependencies" "$npm_path install --legacy-peer-deps" || {
         print_error "Failed to install npm dependencies"
         return 1
     }
@@ -1628,7 +1785,7 @@ EOF
     # Build frontend
     rm -rf "$FRONTEND_DIR/.next" 2>/dev/null || true
     
-    run_with_elapsed_time "Building production bundle" "NEXT_PUBLIC_API_URL='http://${ip_address}:8000' $npm_path run build" || {
+    run_npm_with_progress "Building production bundle" "NEXT_PUBLIC_API_URL='http://${ip_address}:8000' $npm_path run build" || {
         print_error "Failed to build frontend"
         return 1
     }
