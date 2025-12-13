@@ -118,9 +118,11 @@ export async function getHardwareStats(): Promise<ApiResponse<HardwareStats>> {
 }
 
 // Control endpoints
+// Note: CherryPy requires Content-Length header for POST, so we send empty JSON body
 export async function sendAdvert(): Promise<ApiResponse<string>> {
   return fetchApi<ApiResponse<string>>('/api/send_advert', {
     method: 'POST',
+    body: '{}',
   });
 }
 
