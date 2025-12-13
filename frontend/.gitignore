@@ -15,7 +15,7 @@
 
 # next.js
 /.next/
-/out/
+# /out/ - NOT ignored: we commit static build for deployment
 
 # production
 /build

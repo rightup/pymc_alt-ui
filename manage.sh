@@ -770,10 +770,14 @@ do_upgrade() {
     
     echo "[5/6] Merging configuration & updating frontend..."
     merge_config "$CONFIG_DIR/config.yaml" "$REPEATER_DIR/config.yaml.example"
-    # Update static frontend files
+    # Update static frontend files (replaces built-in Vue dashboard)
     if [ -d "$SCRIPT_DIR/frontend/out" ]; then
-        cp -r "$SCRIPT_DIR/frontend/out/"* "$FRONTEND_DIR/" 2>/dev/null || true
-        echo "    ✓ Static frontend updated"
+        local target_dir="$REPEATER_DIR/repeater/web/html"
+        rm -rf "$target_dir" 2>/dev/null || true
+        mkdir -p "$target_dir"
+        cp -r "$SCRIPT_DIR/frontend/out/"* "$target_dir/"
+        chown -R "$SERVICE_USER:$SERVICE_USER" "$target_dir"
+        echo "    ✓ Dashboard updated"
     fi
     create_backend_service
     systemctl daemon-reload
@@ -1626,33 +1630,40 @@ EOF
 }
 
 # Install pre-built static frontend files
-# No Node.js required - backend serves these directly
+# Replaces pyMC_Repeater's built-in Vue dashboard with our Next.js dashboard
+# Backend's CherryPy server serves static files from repeater/web/html/
 install_static_frontend() {
-    local static_dir="$SCRIPT_DIR/frontend/out"
+    local static_src="$SCRIPT_DIR/frontend/out"
+    local target_dir="$REPEATER_DIR/repeater/web/html"
     
     # Check if pre-built static files exist
-    if [ ! -d "$static_dir" ]; then
-        print_error "Static frontend files not found at $static_dir"
+    if [ ! -d "$static_src" ]; then
+        print_error "Static frontend files not found at $static_src"
         print_info "Build the frontend first: cd frontend && npm run build"
         return 1
     fi
     
-    # Copy static files to frontend directory
-    cp -r "$static_dir/"* "$FRONTEND_DIR/"
-    print_success "Static frontend files copied ($(du -sh "$FRONTEND_DIR" | cut -f1))"
-    
-    # Enable static file serving and CORS in backend config
-    if [ -f "$CONFIG_DIR/config.yaml" ]; then
-        yq -i '.web.cors_enabled = true' "$CONFIG_DIR/config.yaml" 2>/dev/null || true
-        yq -i ".web.static_dir = \"$FRONTEND_DIR\"" "$CONFIG_DIR/config.yaml" 2>/dev/null || true
-        print_success "Backend configured to serve static frontend"
+    # Backup existing Vue dashboard if present
+    if [ -d "$target_dir" ]; then
+        local backup_dir="${target_dir}.vue-backup"
+        if [ ! -d "$backup_dir" ]; then
+            mv "$target_dir" "$backup_dir"
+            print_info "Backed up original Vue dashboard to ${backup_dir##*/}"
+        else
+            rm -rf "$target_dir"
+        fi
     fi
     
-    # Set permissions
-    chown -R "$SERVICE_USER:$SERVICE_USER" "$FRONTEND_DIR"
-    print_success "Frontend permissions set"
+    # Copy our Next.js static build to backend's html directory
+    mkdir -p "$target_dir"
+    cp -r "$static_src/"* "$target_dir/"
+    print_success "Dashboard installed ($(du -sh "$target_dir" | cut -f1))"
     
-    print_info "Frontend will be served by backend at http://<ip>:8000/"
+    # Set permissions
+    chown -R "$SERVICE_USER:$SERVICE_USER" "$target_dir"
+    print_success "Permissions set"
+    
+    print_info "Dashboard will be served at http://<ip>:8000/"
     
     return 0
 }
