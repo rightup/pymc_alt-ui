@@ -810,65 +810,119 @@ do_upgrade() {
         return 0
     fi
     
-    clear
-    echo "=== pyMC Console Upgrade ==="
-    echo "Target branch: $branch"
-    echo ""
+    # Print banner
+    print_banner
+    echo -e "  ${DIM}Upgrading to branch: $branch${NC}"
+    echo -e "  ${DIM}Current version: $current_version${NC}"
     
-    echo "[1/6] Stopping service..."
+    local total_steps=6
+    
+    # =========================================================================
+    # Step 1: Stop service
+    # =========================================================================
+    print_step 1 $total_steps "Stopping service"
     systemctl stop "$BACKEND_SERVICE" 2>/dev/null || true
+    print_success "Service stopped"
     
-    echo "[2/6] Backing up configuration..."
+    # =========================================================================
+    # Step 2: Backup configuration
+    # =========================================================================
+    print_step 2 $total_steps "Backing up configuration"
     local backup_file="$CONFIG_DIR/config.yaml.backup.$(date +%Y%m%d_%H%M%S)"
     cp "$CONFIG_DIR/config.yaml" "$backup_file"
-    echo "    Backup saved to: $backup_file"
+    print_success "Backup saved to: $backup_file"
     
-    echo "[3/6] Updating pyMC_Repeater to $branch..."
+    # =========================================================================
+    # Step 3: Update pyMC_Repeater
+    # =========================================================================
+    print_step 3 $total_steps "Updating pyMC_Repeater@$branch"
     cd "$REPEATER_DIR"
-    git fetch origin
-    git checkout "$branch" 2>/dev/null || git checkout -b "$branch" "origin/$branch"
-    git pull origin "$branch"
     
-    echo "[4/6] Updating Python packages..."
+    run_with_spinner "Fetching updates" "git fetch origin" || {
+        print_error "Failed to fetch updates"
+        return 1
+    }
+    
+    git checkout "$branch" 2>/dev/null || git checkout -b "$branch" "origin/$branch" 2>/dev/null
+    
+    run_with_spinner "Pulling latest changes" "git pull origin $branch" || {
+        print_error "Failed to pull branch $branch"
+        return 1
+    }
+    print_success "Repository updated"
+    
+    # =========================================================================
+    # Step 4: Update Python packages
+    # =========================================================================
+    print_step 4 $total_steps "Updating Python packages"
     source "$INSTALL_DIR/venv/bin/activate"
     
-    echo "    Installing pymc_core@$branch..."
-    if ! pip install --upgrade "pymc_core[hardware] @ git+https://github.com/rightup/pyMC_core.git@$branch" 2>&1 | tail -5; then
-        echo ""
-        echo "    ✗ Branch '$branch' not found in pymc_core"
-        echo "    Both repos must use matching branches."
-        echo "    Try upgrading to 'dev' instead."
+    run_npm_with_progress "Installing pymc_core@$branch" "pip install --upgrade 'pymc_core[hardware] @ git+https://github.com/rightup/pyMC_core.git@$branch'" || {
+        print_error "Failed to install pymc_core@$branch"
+        print_info "Branch '$branch' must exist in both pymc_core and pyMC_Repeater"
+        print_info "Try: sudo ./manage.sh upgrade dev"
         return 1
-    fi
+    }
     
-    # Reinstall pyMC_Repeater (--no-deps since pymc_core already installed)
-    pip install -e . --no-deps >/dev/null 2>&1
-    echo "    ✓ Python packages updated"
+    run_with_spinner "Installing pyMC_Repeater" "pip install -e . --no-deps" || {
+        print_error "Failed to install pyMC_Repeater"
+        return 1
+    }
     
-    echo "[5/6] Merging configuration & updating frontend..."
+    # =========================================================================
+    # Step 5: Update configuration & frontend
+    # =========================================================================
+    print_step 5 $total_steps "Updating configuration & frontend"
+    
     merge_config "$CONFIG_DIR/config.yaml" "$REPEATER_DIR/config.yaml.example"
-    # Update static frontend files (replaces built-in Vue dashboard)
+    print_success "Configuration merged"
+    
+    # Update static frontend files
     if [ -d "$SCRIPT_DIR/frontend/out" ]; then
         local target_dir="$REPEATER_DIR/repeater/web/html"
         rm -rf "$target_dir" 2>/dev/null || true
         mkdir -p "$target_dir"
         cp -r "$SCRIPT_DIR/frontend/out/"* "$target_dir/"
         chown -R "$SERVICE_USER:$SERVICE_USER" "$target_dir"
-        echo "    ✓ Dashboard updated"
+        print_success "Dashboard updated"
+    else
+        print_warning "Frontend build not found - dashboard not updated"
     fi
+    
     create_backend_service
     systemctl daemon-reload
+    print_success "Service configuration updated"
     
-    echo "[6/6] Starting service..."
-    systemctl start "$BACKEND_SERVICE"
-    sleep 2
+    # =========================================================================
+    # Step 6: Start service
+    # =========================================================================
+    print_step 6 $total_steps "Starting service"
     
+    if systemctl start "$BACKEND_SERVICE"; then
+        sleep 2
+        if backend_running; then
+            print_success "Service running"
+        else
+            print_warning "Service started but may not be healthy"
+        fi
+    else
+        print_warning "Service failed to start"
+    fi
+    
+    # Show completion
     local new_version=$(get_version)
-    echo ""
-    echo "=== Upgrade Complete ==="
-    echo "Version: $current_version → $new_version"
+    local ip_address=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost")
     
-    show_info "Upgrade Complete" "\nUpgrade completed successfully!\n\nVersion: $current_version → $new_version\n\n✓ Configuration preserved\n✓ Services restarted"
+    echo ""
+    echo -e "${BOLD}${GREEN}════════════════════════════════════════════════════════════${NC}"
+    echo -e "${BOLD}${GREEN}  Upgrade Complete!${NC}"
+    echo -e "${BOLD}${GREEN}════════════════════════════════════════════════════════════${NC}"
+    echo ""
+    echo -e "  ${CHECK} Version: ${DIM}$current_version${NC} → ${BOLD}$new_version${NC}"
+    echo -e "  ${CHECK} Branch: ${BOLD}$branch${NC}"
+    echo -e "  ${CHECK} Configuration preserved"
+    echo -e "  ${CHECK} Dashboard: ${CYAN}http://$ip_address:8000${NC}"
+    echo ""
 }
 
 # ============================================================================
