@@ -615,6 +615,9 @@ do_install() {
     
     cd "$REPEATER_DIR"
     
+    # Patch backend to support Next.js static file serving
+    patch_nextjs_static_serving
+    
     run_npm_with_progress "Installing Python package" "pip install -e ." || {
         print_error "Failed to install pyMC_Repeater package"
         return 1
@@ -1605,6 +1608,41 @@ install_yq_silent() {
     fi
     
     wget -qO /usr/local/bin/yq "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/${YQ_BINARY}" && chmod +x /usr/local/bin/yq
+}
+
+# Patch pyMC_Repeater's http_server.py to support Next.js static assets
+# This adds /_next and /images routes for serving the Next.js dashboard
+# TODO: Remove this patch once upstream pyMC_Repeater supports Next.js
+patch_nextjs_static_serving() {
+    local http_server="$REPEATER_DIR/repeater/web/http_server.py"
+    
+    if [ ! -f "$http_server" ]; then
+        print_warning "http_server.py not found, skipping patch"
+        return 0
+    fi
+    
+    # Check if already patched (look for _next)
+    if grep -q '"/_next"' "$http_server" 2>/dev/null; then
+        print_info "Next.js static serving already configured"
+        return 0
+    fi
+    
+    # Apply patch using sed
+    # 1. Add next_dir and images_dir variables after assets_dir
+    sed -i 's|assets_dir = os.path.join(html_dir, "assets")|assets_dir = os.path.join(html_dir, "assets")\n            next_dir = os.path.join(html_dir, "_next")  # Next.js static assets\n            images_dir = os.path.join(html_dir, "images")  # Images directory|' "$http_server"
+    
+    # 2. Add /_next route config after /assets block
+    sed -i '/"\/favicon.ico": {/i\                # Next.js static assets (CSS, JS, fonts)\n                "/_next": {\n                    "tools.staticdir.on": True,\n                    "tools.staticdir.dir": next_dir,\n                    "tools.staticdir.content_types": {\n                        '"'"'js'"'"': '"'"'application/javascript'"'"',\n                        '"'"'css'"'"': '"'"'text/css'"'"',\n                        '"'"'woff2'"'"': '"'"'font/woff2'"'"',\n                        '"'"'woff'"'"': '"'"'font/woff'"'"',\n                    },\n                },\n                # Images directory\n                "/images": {\n                    "tools.staticdir.on": True,\n                    "tools.staticdir.dir": images_dir,\n                },' "$http_server"
+    
+    # 3. Add CORS for new routes
+    sed -i 's|config\["/favicon.ico"\]\["cors.expose.on"\] = True|config["/_next"]["cors.expose.on"] = True\n                config["/images"]["cors.expose.on"] = True\n                config["/favicon.ico"]["cors.expose.on"] = True|' "$http_server"
+    
+    # Verify patch was applied
+    if grep -q '"/_next"' "$http_server" 2>/dev/null; then
+        print_success "Patched http_server.py for Next.js static serving"
+    else
+        print_warning "Patch may not have applied correctly"
+    fi
 }
 
 create_backend_service() {
