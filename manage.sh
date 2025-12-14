@@ -1613,7 +1613,14 @@ do_restart() {
 # ============================================================================
 
 do_uninstall() {
-    if ! is_installed; then
+    # Check for ANY installation (old paths or new paths)
+    local found_install=false
+    [ -d "$REPEATER_DIR" ] && found_install=true
+    [ -d "$CONSOLE_DIR" ] && found_install=true
+    [ -d "/opt/pymc_console/pymc_repeater" ] && found_install=true  # Old path
+    [ -f "/etc/systemd/system/pymc-repeater.service" ] && found_install=true
+    
+    if [ "$found_install" = false ]; then
         show_error "pyMC Console is not installed."
         return 1
     fi
@@ -1623,7 +1630,7 @@ do_uninstall() {
         return 1
     fi
     
-    if ! ask_yes_no "⚠️  Confirm Uninstall" "\nThis will COMPLETELY REMOVE:\n\n- pyMC Repeater service and files\n- pyMC Console frontend\n- Configuration files\n- Log files\n- Service user\n\nThis action cannot be undone!\n\nContinue?"; then
+    if ! ask_yes_no "⚠️  Confirm Uninstall" "\nThis will COMPLETELY REMOVE:\n\n- pyMC Repeater service and files\n- pyMC Console frontend\n- Python packages (pymc_repeater, pymc_core)\n- Configuration files\n- Log files\n- Service user\n\nThis action cannot be undone!\n\nContinue?"; then
         return 0
     fi
     
@@ -1631,11 +1638,11 @@ do_uninstall() {
     echo "=== pyMC Console Uninstall ==="
     echo ""
     
-    echo "[1/6] Stopping service..."
+    echo "[1/7] Stopping service..."
     systemctl stop "$BACKEND_SERVICE" 2>/dev/null || true
     systemctl disable "$BACKEND_SERVICE" 2>/dev/null || true
     
-    echo "[2/6] Backing up configuration..."
+    echo "[2/7] Backing up configuration..."
     local backup_path=""
     if [ -d "$CONFIG_DIR" ]; then
         backup_path="/tmp/pymc_config_backup_$(date +%Y%m%d_%H%M%S)"
@@ -1643,23 +1650,39 @@ do_uninstall() {
         echo "    Backup saved to: $backup_path"
     fi
     
-    echo "[3/6] Removing systemd services..."
+    echo "[3/7] Removing systemd services..."
     rm -f /etc/systemd/system/pymc-repeater.service
     rm -f /etc/systemd/system/pymc-frontend.service
     systemctl daemon-reload
     
-    echo "[4/6] Removing installation directories..."
+    echo "[4/7] Uninstalling Python packages..."
+    # Uninstall system-wide pip packages
+    pip uninstall -y pymc_repeater 2>/dev/null || true
+    pip uninstall -y pymc_core 2>/dev/null || true
+    pip uninstall -y pymc-repeater 2>/dev/null || true
+    pip uninstall -y pymc-core 2>/dev/null || true
+    echo "    ✓ Python packages removed"
+    
+    echo "[5/7] Removing installation directories..."
+    # Remove new paths
     rm -rf "$REPEATER_DIR"
     rm -rf "$CONSOLE_DIR"
+    # Remove old paths (from previous versions)
+    rm -rf "/opt/pymc_console"
+    echo "    ✓ Directories removed"
     
-    echo "[5/6] Removing configuration and logs..."
+    echo "[6/7] Removing configuration and logs..."
     rm -rf "$CONFIG_DIR"
     rm -rf "$LOG_DIR"
     rm -rf /var/lib/pymc_repeater
+    echo "    ✓ Config and logs removed"
     
-    echo "[6/6] Removing service user..."
+    echo "[7/7] Removing service user..."
     if id "$SERVICE_USER" &>/dev/null; then
         userdel "$SERVICE_USER" 2>/dev/null || true
+        echo "    ✓ User '$SERVICE_USER' removed"
+    else
+        echo "    User '$SERVICE_USER' not found (already removed)"
     fi
     
     echo ""
