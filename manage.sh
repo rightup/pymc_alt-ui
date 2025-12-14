@@ -344,16 +344,16 @@ run_npm_with_progress() {
         # Convert to bar position
         local anim_pos=$(( (eased_t * (width - cursor_width)) / 100 ))
         
-        # Determine trail length based on velocity (more motion blur when fast)
-        # velocity 0-30: no trail (slow/stopped), 30-60: short trail, 60+: full trail
-        local show_trail=0
-        [ $velocity -gt 30 ] && show_trail=1
-        local full_trail=0
-        [ $velocity -gt 60 ] && full_trail=1
+        # Determine trail intensity based on velocity (motion blur when fast)
+        # velocity 0-30: no trail, 30-70: short trail, 70+: full trail
+        local show_near_trail=0
+        [ $velocity -gt 30 ] && show_near_trail=1
+        local show_far_trail=0
+        [ $velocity -gt 70 ] && show_far_trail=1
         
-        # Use bright glow color when at high velocity (peak speed)
-        local cursor_color="$CYAN"
-        [ $velocity -gt 70 ] && cursor_color="$CYAN_BRIGHT"
+        # Glow on cursor at apex velocity (tight window: 85-100%)
+        local cursor_glow=0
+        [ $velocity -gt 85 ] && cursor_glow=1
         
         # Build bar with velocity-based effects
         local bar=""
@@ -367,19 +367,24 @@ run_npm_with_progress() {
                 dist_from_cursor=0
             fi
             
-            # Motion blur effect: trail only appears when moving fast
+            # Build character with motion blur effect
             if [ $dist_from_cursor -eq 0 ]; then
-                bar+="█"  # Solid cursor always visible
-            elif [ $show_trail -eq 1 ] && [ $dist_from_cursor -eq 1 ]; then
-                bar+="▓"  # Near trail (motion blur) - only when moving
-            elif [ $full_trail -eq 1 ] && [ $dist_from_cursor -eq 2 ]; then
-                bar+="▒"  # Extended trail - only at high speed
+                # Solid cursor - glow at apex velocity
+                if [ $cursor_glow -eq 1 ]; then
+                    bar+="${CYAN_BRIGHT}█${CYAN}"  # Glowing cursor
+                else
+                    bar+="█"  # Normal cursor
+                fi
+            elif [ $dist_from_cursor -eq 1 ] && [ $show_near_trail -eq 1 ]; then
+                bar+="▓"  # Near motion blur - appears when moving
+            elif [ $dist_from_cursor -eq 2 ] && [ $show_far_trail -eq 1 ]; then
+                bar+="▒"  # Far motion blur - only at high speed  
             else
-                bar+="░"  # Background
+                bar+="░"  # Empty background
             fi
         done
         
-        printf "\r        ${cursor_color}[${bar}]${NC} %s ${DIM}(%dm %02ds)${NC}  " "$description" $mins $secs
+        printf "\r        ${CYAN}[${bar}]${NC} %s ${DIM}(%dm %02ds)${NC}  " "$description" $mins $secs
         sleep 0.033  # ~30fps for smoother animation
         ((frame++)) || true
     done
