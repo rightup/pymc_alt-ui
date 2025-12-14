@@ -706,7 +706,8 @@ do_install() {
     # -------------------------------------------------------------------------
     # Apply pymc_core patch (AFTER pip install since it patches installed pkg)
     # -------------------------------------------------------------------------
-    patch_pymc_core_gpio          # PATCH 3: Fix GPIO initialization bug
+    # EXPERIMENT: Commenting out GPIO patches to test if DEBUG fix alone is sufficient
+    # patch_pymc_core_gpio          # PATCH 3: Fix GPIO initialization bug
     
     # =========================================================================
     # Step 7: Setup configuration
@@ -926,7 +927,8 @@ do_upgrade() {
     # -------------------------------------------------------------------------
     # Apply pymc_core patch (AFTER pip install since it patches installed pkg)
     # -------------------------------------------------------------------------
-    patch_pymc_core_gpio          # PATCH 3: Fix GPIO initialization bug
+    # EXPERIMENT: Commenting out GPIO patches to test if DEBUG fix alone is sufficient
+    # patch_pymc_core_gpio          # PATCH 3: Fix GPIO initialization bug
     
     # =========================================================================
     # Step 5: Update configuration & frontend
