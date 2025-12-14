@@ -5,11 +5,12 @@
 set -e
 
 # Installation paths
-INSTALL_DIR="/opt/pymc_console"
+# REPEATER_DIR: Where pyMC_Repeater is installed (matches upstream standard)
+# CONSOLE_DIR: Where pymc_console stores its files (radio presets, etc.)
+REPEATER_DIR="/opt/pymc_repeater"
+CONSOLE_DIR="/opt/pymc_console"
 CONFIG_DIR="/etc/pymc_repeater"
 LOG_DIR="/var/log/pymc_repeater"
-FRONTEND_DIR="$INSTALL_DIR/frontend"
-REPEATER_DIR="$INSTALL_DIR/pymc_repeater"
 SERVICE_USER="repeater"
 
 # Service name (backend serves both API and static frontend)
@@ -429,7 +430,7 @@ print_completion() {
     
     # Disk usage report
     echo -e "${BOLD}Disk Usage:${NC}"
-    local install_size=$(du -sh "$INSTALL_DIR" 2>/dev/null | cut -f1 || echo "N/A")
+    local install_size=$(du -sh "$REPEATER_DIR" 2>/dev/null | cut -f1 || echo "N/A")
     local config_size=$(du -sh "$CONFIG_DIR" 2>/dev/null | cut -f1 || echo "N/A")
     echo -e "  ${DIM}Installation:${NC}  $install_size"
     echo -e "  ${DIM}Configuration:${NC} $config_size"
@@ -519,7 +520,7 @@ get_input() {
 # ============================================================================
 
 is_installed() {
-    [ -d "$INSTALL_DIR" ] && [ -d "$REPEATER_DIR" ]
+    [ -d "$REPEATER_DIR" ] && [ -f "$REPEATER_DIR/pyproject.toml" ]
 }
 
 backend_running() {
@@ -554,7 +555,7 @@ get_status_display() {
 do_install() {
     # Check if already installed
     if is_installed; then
-        show_error "pyMC Console is already installed!\n\nInstallation directory: $INSTALL_DIR\n\nUse 'upgrade' to update or 'uninstall' first."
+        show_error "pyMC Console is already installed!\n\npyMC_Repeater: $REPEATER_DIR\n\nUse 'upgrade' to update or 'uninstall' first."
         return 1
     fi
     
@@ -585,7 +586,7 @@ do_install() {
     fi
     
     # Welcome screen
-    $DIALOG --backtitle "pyMC Console Management" --title "Welcome" --msgbox "\nWelcome to pyMC Console Setup\n\nThis will install:\n- pyMC Repeater (LoRa mesh repeater)\n- pyMC Console (Next.js dashboard)\n- Monitoring stack (Prometheus/Grafana configs)\n\nBranch: $branch\nInstall directory: $INSTALL_DIR\n\nPress OK to continue..." 16 70
+    $DIALOG --backtitle "pyMC Console Management" --title "Welcome" --msgbox "\nWelcome to pyMC Console Setup\n\nThis will install:\n- pyMC Repeater (LoRa mesh repeater) → $REPEATER_DIR\n- pyMC Console (Next.js dashboard)\n\nBranch: $branch\n\nPress OK to continue..." 16 70
     
     # SPI Check (Raspberry Pi)
     check_spi
@@ -596,7 +597,7 @@ do_install() {
     # Print banner
     print_banner
     echo -e "  ${DIM}Branch: $branch${NC}"
-    echo -e "  ${DIM}Install directory: $INSTALL_DIR${NC}"
+    echo -e "  ${DIM}pyMC_Repeater: $REPEATER_DIR${NC}"
     
     local total_steps=9
     
@@ -625,11 +626,11 @@ do_install() {
     # =========================================================================
     print_step 2 $total_steps "Creating directories"
     
-    mkdir -p "$INSTALL_DIR" && print_success "$INSTALL_DIR"
+    mkdir -p "$REPEATER_DIR" && print_success "$REPEATER_DIR"
+    mkdir -p "$CONSOLE_DIR" && print_success "$CONSOLE_DIR"
     mkdir -p "$CONFIG_DIR" && print_success "$CONFIG_DIR"
     mkdir -p "$LOG_DIR" && print_success "$LOG_DIR"
     mkdir -p /var/lib/pymc_repeater && print_success "/var/lib/pymc_repeater"
-    mkdir -p "$FRONTEND_DIR" && print_success "$FRONTEND_DIR"
     
     # =========================================================================
     # Step 3: Install system dependencies
@@ -658,6 +659,9 @@ do_install() {
     # =========================================================================
     print_step 4 $total_steps "Cloning pyMC_Repeater@$branch"
     
+    # Remove existing if present (fresh install)
+    [ -d "$REPEATER_DIR/.git" ] && rm -rf "$REPEATER_DIR"
+    
     run_npm_with_progress "Cloning repository" "git clone -b '$branch' https://github.com/rightup/pyMC_Repeater.git '$REPEATER_DIR'" || {
         print_error "Failed to clone pyMC_Repeater"
         print_info "Check if branch '$branch' exists"
@@ -678,9 +682,9 @@ do_install() {
     # =========================================================================
     print_step 5 $total_steps "Installing pyMC_Repeater + pymc_core (via pip)"
     
-    # Match upstream: use system Python with --break-system-packages
+    # Match upstream exactly: use system Python with all upstream flags
     # This installs pymc_core[hardware] automatically as a dependency
-    run_npm_with_progress "Installing Python packages" "pip install --break-system-packages --force-reinstall --no-cache-dir ." || {
+    run_npm_with_progress "Installing Python packages" "pip install --break-system-packages --force-reinstall --no-cache-dir --ignore-installed ." || {
         print_error "Failed to install pyMC_Repeater package"
         print_info "Branch '$branch' must exist in both pymc_core and pyMC_Repeater repos"
         return 1
@@ -701,24 +705,23 @@ do_install() {
         print_info "config.yaml already exists, preserving"
     fi
     
-    # Copy radio settings files
+    # Copy radio settings files to console dir
     if [ -f "$REPEATER_DIR/radio-settings.json" ]; then
-        cp "$REPEATER_DIR/radio-settings.json" "$INSTALL_DIR/"
+        cp "$REPEATER_DIR/radio-settings.json" "$CONSOLE_DIR/"
         print_success "Copied radio-settings.json"
     fi
     
     if [ -f "$REPEATER_DIR/radio-presets.json" ]; then
-        cp "$REPEATER_DIR/radio-presets.json" "$INSTALL_DIR/"
+        cp "$REPEATER_DIR/radio-presets.json" "$CONSOLE_DIR/"
         print_success "Copied radio-presets.json"
     fi
     
     # =========================================================================
     # Step 7: Create backend systemd service
     # =========================================================================
-    print_step 7 $total_steps "Creating backend service"
+    print_step 7 $total_steps "Installing backend service"
     
-    create_backend_service
-    print_success "Created pymc-repeater.service"
+    install_backend_service
     
     # =========================================================================
     # Step 8: Install static frontend
@@ -736,7 +739,7 @@ do_install() {
     print_step 9 $total_steps "Finalizing installation"
     
     print_info "Setting permissions..."
-    chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR" "$CONFIG_DIR" "$LOG_DIR" /var/lib/pymc_repeater
+    chown -R "$SERVICE_USER:$SERVICE_USER" "$REPEATER_DIR" "$CONSOLE_DIR" "$CONFIG_DIR" "$LOG_DIR" /var/lib/pymc_repeater
     chmod 750 "$CONFIG_DIR" "$LOG_DIR"
     print_success "Permissions configured"
     
@@ -892,9 +895,9 @@ do_upgrade() {
     patch_nextjs_static_serving   # PATCH 1: Next.js static export support
     patch_api_endpoints           # PATCH 2: Radio config API endpoint
     
-    # Match upstream: use system Python with --break-system-packages
+    # Match upstream exactly: use system Python with all upstream flags
     # This installs/updates pymc_core[hardware] automatically as a dependency
-    run_npm_with_progress "Installing pyMC_Repeater + dependencies" "pip install --break-system-packages --force-reinstall --no-cache-dir ." || {
+    run_npm_with_progress "Installing pyMC_Repeater + dependencies" "pip install --break-system-packages --force-reinstall --no-cache-dir --ignore-installed ." || {
         print_error "Failed to install pyMC_Repeater"
         print_info "Branch '$branch' must exist in both pymc_core and pyMC_Repeater repos"
         return 1
@@ -920,9 +923,8 @@ do_upgrade() {
         print_warning "Frontend build not found - dashboard not updated"
     fi
     
-    create_backend_service
+    install_backend_service
     systemctl daemon-reload
-    print_success "Service configuration updated"
     
     # =========================================================================
     # Step 6: Start service
@@ -994,8 +996,8 @@ configure_radio_terminal() {
     presets_json=$(curl -s --max-time 5 https://api.meshcore.nz/api/v1/config 2>/dev/null)
     
     if [ -z "$presets_json" ]; then
-        if [ -f "$INSTALL_DIR/radio-presets.json" ]; then
-            presets_json=$(cat "$INSTALL_DIR/radio-presets.json")
+        if [ -f "$CONSOLE_DIR/radio-presets.json" ]; then
+            presets_json=$(cat "$CONSOLE_DIR/radio-presets.json")
         elif [ -f "$REPEATER_DIR/radio-presets.json" ]; then
             presets_json=$(cat "$REPEATER_DIR/radio-presets.json")
         fi
@@ -1137,8 +1139,8 @@ configure_hardware_terminal() {
     local hw_config=""
     
     # Find hardware presets file
-    if [ -f "$INSTALL_DIR/radio-settings.json" ]; then
-        hw_config="$INSTALL_DIR/radio-settings.json"
+    if [ -f "$CONSOLE_DIR/radio-settings.json" ]; then
+        hw_config="$CONSOLE_DIR/radio-settings.json"
     elif [ -f "$REPEATER_DIR/radio-settings.json" ]; then
         hw_config="$REPEATER_DIR/radio-settings.json"
     fi
@@ -1359,8 +1361,8 @@ select_radio_preset() {
     presets_json=$(curl -s --max-time 5 https://api.meshcore.nz/api/v1/config 2>/dev/null)
     
     if [ -z "$presets_json" ]; then
-        if [ -f "$INSTALL_DIR/radio-presets.json" ]; then
-            presets_json=$(cat "$INSTALL_DIR/radio-presets.json")
+        if [ -f "$CONSOLE_DIR/radio-presets.json" ]; then
+            presets_json=$(cat "$CONSOLE_DIR/radio-presets.json")
         elif [ -f "$REPEATER_DIR/radio-presets.json" ]; then
             presets_json=$(cat "$REPEATER_DIR/radio-presets.json")
         else
@@ -1498,8 +1500,8 @@ do_gpio() {
 select_hardware_preset() {
     local hw_config=""
     
-    if [ -f "$INSTALL_DIR/radio-settings.json" ]; then
-        hw_config="$INSTALL_DIR/radio-settings.json"
+    if [ -f "$CONSOLE_DIR/radio-settings.json" ]; then
+        hw_config="$CONSOLE_DIR/radio-settings.json"
     elif [ -f "$REPEATER_DIR/radio-settings.json" ]; then
         hw_config="$REPEATER_DIR/radio-settings.json"
     else
@@ -1646,8 +1648,9 @@ do_uninstall() {
     rm -f /etc/systemd/system/pymc-frontend.service
     systemctl daemon-reload
     
-    echo "[4/6] Removing installation directory..."
-    rm -rf "$INSTALL_DIR"
+    echo "[4/6] Removing installation directories..."
+    rm -rf "$REPEATER_DIR"
+    rm -rf "$CONSOLE_DIR"
     
     echo "[5/6] Removing configuration and logs..."
     rm -rf "$CONFIG_DIR"
@@ -2079,42 +2082,24 @@ PATCHEOF
     fi
 }
 
-create_backend_service() {
-    cat > /etc/systemd/system/pymc-repeater.service << EOF
-[Unit]
-Description=pyMC Repeater Daemon
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=$SERVICE_USER
-Group=$SERVICE_USER
-WorkingDirectory=$REPEATER_DIR
-Environment="PYTHONPATH=$REPEATER_DIR"
-
-# Start command - use system python (matches upstream)
-ExecStart=/usr/bin/python3 -m repeater.main --config $CONFIG_DIR/config.yaml
-
-# Restart on failure
-Restart=on-failure
-RestartSec=5
-
-# Resource limits
-MemoryMax=256M
-
-# Logging
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=pymc-repeater
-
-# Security (relaxed for proper operation)
-NoNewPrivileges=true
-ReadWritePaths=$LOG_DIR /var/lib/pymc_repeater $CONFIG_DIR
-
-[Install]
-WantedBy=multi-user.target
-EOF
+install_backend_service() {
+    # Copy upstream's service file as base
+    if [ -f "$REPEATER_DIR/pymc-repeater.service" ]; then
+        cp "$REPEATER_DIR/pymc-repeater.service" /etc/systemd/system/pymc-repeater.service
+        
+        # WORKAROUND: Add --log-level DEBUG to fix pymc_core timing bug on Pi 5
+        # Issue: asyncio event loop not ready when interrupt callbacks register
+        # This slows down initialization enough for the event loop to start
+        # TODO: File upstream issue at github.com/rightup/pyMC_core
+        sed -i 's|--config /etc/pymc_repeater/config.yaml$|--config /etc/pymc_repeater/config.yaml --log-level DEBUG|' \
+            /etc/systemd/system/pymc-repeater.service
+        
+        print_success "Installed upstream service file"
+        print_info "Added --log-level DEBUG workaround for Pi 5 timing bug"
+    else
+        print_error "Service file not found in pyMC_Repeater repo"
+        return 1
+    fi
 }
 
 # Install pre-built static frontend files

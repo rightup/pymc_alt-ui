@@ -4,10 +4,12 @@ This file provides guidance to WARP (warp.dev) when working with code in this re
 
 ## Project Overview
 
-pymc_console is a Next.js dashboard and installer for [pyMC_Repeater](https://github.com/rightup/pyMC_Repeater), a LoRa mesh network repeater built on [pymc_core](https://github.com/rightup/pyMC_core). It provides:
+pymc_console is a **dashboard that plugs into** [pyMC_Repeater](https://github.com/rightup/pyMC_Repeater), a LoRa mesh network repeater built on [pymc_core](https://github.com/rightup/pyMC_core). 
+
+**Philosophy**: We install pyMC_Repeater exactly as upstream intends, then layer our dashboard on top. Our manage.sh honors upstream's installation flow and paths.
 
 - **Next.js Dashboard** - Real-time monitoring of packets, neighbors, stats, and radio config
-- **manage.sh Installer** - TUI-based installer/upgrader with whiptail/dialog interface
+- **manage.sh Installer** - TUI that installs upstream pyMC_Repeater + our dashboard overlay
 - **Static Export** - Dashboard served directly by pyMC_Repeater's CherryPy backend (no Node.js server needed in production)
 
 ## Tech Stack
@@ -62,12 +64,12 @@ The dashboard is a **static export** (`output: 'export'` in next.config.ts). Aft
 
 ### Installation Paths (on target device)
 
-- `/opt/pymc_console/` - Main install directory
-- `/opt/pymc_console/pymc_repeater/` - Cloned pyMC_Repeater repo
+- `/opt/pymc_repeater/` - pyMC_Repeater (matches upstream standard path)
+- `/opt/pymc_console/` - Our files (radio presets, etc.)
 - `/etc/pymc_repeater/config.yaml` - Radio and repeater configuration
 - `/var/log/pymc_repeater/` - Log files
-- Systemd service: `pymc-repeater.service`
-- Python packages installed system-wide (via `pip --break-system-packages`)
+- Systemd service: `pymc-repeater.service` (upstream's file, with DEBUG workaround)
+- Python packages installed system-wide (via `pip --break-system-packages --ignore-installed`)
 
 ### Frontend Structure (`frontend/src/`)
 
@@ -150,26 +152,26 @@ The main installer script provides a TUI (whiptail/dialog) for:
 
 ### Key Functions in manage.sh
 
-- `do_install()` - Fresh installation flow
-- `do_upgrade()` - Upgrade existing installation
+- `do_install()` - Clones pyMC_Repeater to `/opt/pymc_repeater`, installs via pip, overlays dashboard
+- `do_upgrade()` - Updates pyMC_Repeater and dashboard
+- `install_backend_service()` - Copies upstream's service file, adds DEBUG workaround
+- `install_static_frontend()` - Copies built Next.js files to pyMC_Repeater's web directory
 - `configure_radio_terminal()` - Radio preset selection
-- `create_backend_service()` - Generate systemd service file
-- `install_static_frontend()` - Copy built Next.js files to pyMC_Repeater
-- `patch_nextjs_static_serving()` - Patch pyMC_Repeater's http_server.py for Next.js routing
-- `patch_api_endpoints()` - Add `/api/update_radio_config` endpoint
 
-### Upstream Patches
+### Upstream Patches (PR Candidates)
 
-manage.sh applies patches to pyMC_Repeater during install:
+These patches are applied during install and should be submitted as PRs to pyMC_Repeater:
 
 1. **patch_nextjs_static_serving** - Modifies `http_server.py` to serve Next.js static export (route-specific index.html files, `/_next` assets)
 2. **patch_api_endpoints** - Adds `/api/update_radio_config` POST endpoint for web-based radio configuration
 
-These should eventually be merged upstream to pyMC_Repeater.
+### Important: DEBUG Log Level Workaround
+
+The service file includes `--log-level DEBUG` to fix a timing bug in pymc_core where the asyncio event loop isn't ready when interrupt callbacks register. This particularly affects faster hardware (Pi 5). TODO: File upstream issue at github.com/rightup/pyMC_core.
 
 ### Important: System Python (No Virtualenv)
 
-The installer uses system Python with `--break-system-packages` to match upstream pyMC_Repeater. This is critical - using a virtualenv caused timing-related issues with GPIO interrupt initialization that manifested as RX failures, especially on faster hardware like Pi 5.
+The installer uses system Python with `--break-system-packages --ignore-installed` to match upstream pyMC_Repeater exactly.
 
 ## Configuration
 
