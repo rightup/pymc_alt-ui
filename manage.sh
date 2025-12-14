@@ -2129,7 +2129,7 @@ patch_pymc_core_gpio() {
             print_info "GPIO initialization already patched"
         else
             # Apply the fix: change initial_value=True to initial_value=False
-            sed -i 's/_gpio_manager.setup_output_pin(pin, initial_value=True)/_gpio_manager.setup_output_pin(pin, initial_value=False)/g' "$sx126x_file"
+            sed -i 's/_gpio_manager\.setup_output_pin(pin, initial_value=True)/_gpio_manager.setup_output_pin(pin, initial_value=False)/g' "$sx126x_file"
             
             if grep -q 'initial_value=False' "$sx126x_file" 2>/dev/null; then
                 print_success "Fix A: GPIO initialization (initial_value=False)"
@@ -2149,7 +2149,7 @@ patch_pymc_core_gpio() {
     if grep -q '_get_output(self._txen).write(True)' "$sx126x_file" 2>/dev/null; then
         # Comment out the TXEN=HIGH lines - let higher-level code manage TXEN
         # This pattern appears in both request() and listen() methods
-        sed -i 's/_get_output(self._txen).write(True)/# _get_output(self._txen).write(True)  # PATCHED: E22 needs TXEN managed by wrapper/g' "$sx126x_file"
+        sed -i 's/_get_output(self\._txen)\.write(True)/# _get_output(self._txen).write(True)  # PATCHED: E22 needs TXEN managed by wrapper/g' "$sx126x_file"
         
         if grep -q 'PATCHED: E22 needs TXEN' "$sx126x_file" 2>/dev/null; then
             print_success "Fix B: TXEN override disabled in request()/listen()"
@@ -2196,8 +2196,9 @@ patch_pymc_core_gpio() {
                     done)
                 
                 if [ -n "$line_num" ]; then
-                    # Insert our fix before that line
-                    sed -i "${line_num}i\\            # Set RF switch to RX mode before entering RX continuous\n            self._control_tx_rx_pins(tx_mode=False)" "$wrapper_file"
+                    # Insert our fix before that line (two lines, inserted in reverse order)
+                    sed -i "${line_num}i\\            self._control_tx_rx_pins(tx_mode=False)" "$wrapper_file"
+                    sed -i "${line_num}i\\            # Set RF switch to RX mode before entering RX continuous" "$wrapper_file"
                     
                     if grep -q 'Set RF switch to RX mode before entering RX continuous' "$wrapper_file" 2>/dev/null; then
                         print_success "Fix C: RF switch init in sx1262_wrapper.py"
