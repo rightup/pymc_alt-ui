@@ -1787,12 +1787,18 @@ do_restart() {
 # ============================================================================
 
 do_uninstall() {
-    # Check for ANY installation (old paths or new paths)
+    # Get site-packages path for checking leftovers
+    local site_packages
+    site_packages=$(python3 -c "import site; print(site.getsitepackages()[0])" 2>/dev/null || echo "/usr/local/lib/python3/dist-packages")
+    
+    # Check for ANY installation (old paths, new paths, or site-packages leftovers)
     local found_install=false
     [ -d "$INSTALL_DIR" ] && found_install=true
     [ -d "$CONSOLE_DIR" ] && found_install=true
     [ -d "/opt/pymc_console/pymc_repeater" ] && found_install=true  # Old path
     [ -f "/etc/systemd/system/pymc-repeater.service" ] && found_install=true
+    [ -d "$site_packages/repeater" ] && found_install=true  # pip leftovers
+    [ -d "$site_packages/pymc_core" ] && found_install=true  # pip leftovers
     
     if [ "$found_install" = false ]; then
         show_error "pyMC Console is not installed."
@@ -1848,8 +1854,7 @@ do_uninstall() {
     pip uninstall -y pymc-repeater 2>/dev/null || true
     pip uninstall -y pymc-core 2>/dev/null || true
     # Also remove any leftover site-packages directories (pip uninstall may not fully clean up)
-    local site_packages
-    site_packages=$(python3 -c "import site; print(site.getsitepackages()[0])" 2>/dev/null || echo "/usr/local/lib/python3/dist-packages")
+    # Note: site_packages variable defined at start of function
     rm -rf "$site_packages/repeater" 2>/dev/null || true
     rm -rf "$site_packages/pymc_core" 2>/dev/null || true
     rm -rf "$site_packages/pymc_repeater"* 2>/dev/null || true
