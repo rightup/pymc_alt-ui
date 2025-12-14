@@ -1771,10 +1771,12 @@ install_yq_silent() {
 #    - PR Status: Pending
 #
 # 3. patch_pymc_core_gpio (pymc_core SX126x.py)
-#    - CRITICAL: Fixes GPIO initialization bug in dev branch
-#    - Bug: _get_output() sets initial_value=True (HIGH) for all pins
-#    - Impact: Both TXEN and RXEN are HIGH, breaking RX on E22 modules
-#    - Fix: Change initial_value to False (LOW) - matches gpiozero default
+#    - CRITICAL: Fixes two GPIO bugs in dev branch that break RX on E22 modules
+#    - Bug A: _get_output() sets initial_value=True (HIGH) for all pins
+#    - Bug B: request() method sets TXEN HIGH when entering RX mode
+#    - Impact: Both TXEN and RXEN end up HIGH, RF switch in undefined state
+#    - Fix A: Change initial_value=True to initial_value=False
+#    - Fix B: Comment out the TXEN=HIGH lines in request() and listen()
 #    - PR Status: Pending - should be filed against rightup/pyMC_core
 #
 # To generate clean patches for upstream PR:
@@ -2063,35 +2065,39 @@ PATCHEOF
 }
 
 # ------------------------------------------------------------------------------
-# PATCH 3: pymc_core GPIO Initialization Bug Fix
+# PATCH 3: pymc_core GPIO Bug Fixes for E22 Modules
 # ------------------------------------------------------------------------------
 # File: pymc_core/hardware/lora/LoRaRF/SX126x.py (installed via pip)
-# Purpose: Fix GPIO pin initialization that breaks RX on E22 modules
+# Purpose: Fix two GPIO bugs that break RX on E22 modules with external PA/LNA
 # 
-# Root Cause Analysis:
+# Bug A - GPIO Initialization:
 #   The dev branch refactored GPIO management to use a centralized GPIOPinManager.
 #   In _get_output() and _try_get_output(), pins are created with initial_value=True.
 #   This sets ALL output pins HIGH on first access, including TXEN.
-#   
-#   For E22 modules with external PA/LNA:
-#     - RX mode requires: TXEN=LOW, RXEN=HIGH
-#     - TX mode requires: TXEN=HIGH, RXEN=LOW
-#   
-#   With initial_value=True, both TXEN and RXEN end up HIGH, which:
-#     - Puts the RF switch in an undefined state
-#     - TX works (TXEN=HIGH is correct for TX)
-#     - RX fails (TXEN should be LOW during RX)
+#   Fix: Change initial_value=True to initial_value=False.
 #
-# Observable Symptoms:
+# Bug B - TXEN Override in request():
+#   The low-level SX126x driver's request() and listen() methods set TXEN HIGH
+#   when entering RX mode. This overrides the higher-level _control_tx_rx_pins()
+#   which correctly sets TXEN=LOW for RX mode.
+#   
+#   Code in request() around line 948:
+#     if self._txen != -1:
+#         self._txState = _get_output(self._txen).read()
+#         _get_output(self._txen).write(True)  # <-- WRONG for E22!
+#   
+#   Fix: Comment out the _get_output(self._txen).write(True) lines.
+#   The higher-level sx1262_wrapper.py handles TXEN/RXEN correctly.
+#
+# For E22 modules with external PA/LNA:
+#   - RX mode requires: TXEN=LOW, RXEN=HIGH  
+#   - TX mode requires: TXEN=HIGH, RXEN=LOW
+#
+# Observable Symptoms (before patch):
 #   - GPIO12 (RXEN) = HIGH, GPIO13 (TXEN) = HIGH (both HIGH = broken)
-#   - Noise floor shows reasonable value (~-116 dBm)
-#   - TX packets transmit successfully
+#   - TX packets transmit successfully  
 #   - RX count stays at 0 despite mesh traffic
-#   - Main branch works (shows GPIO12=LOW, GPIO13=HIGH)
-#
-# Fix:
-#   Change initial_value=True to initial_value=False in _get_output() and
-#   _try_get_output(). This matches gpiozero's DigitalOutputDevice default.
+#   - After any TX, TXEN stays HIGH (never restored to LOW)
 # ------------------------------------------------------------------------------
 patch_pymc_core_gpio() {
     # Find the installed SX126x.py in the virtual environment
@@ -2104,31 +2110,61 @@ patch_pymc_core_gpio() {
     fi
     
     if [ -z "$sx126x_file" ] || [ ! -f "$sx126x_file" ]; then
-        print_warning "SX126x.py not found, skipping GPIO patch"
+        print_warning "SX126x.py not found, skipping GPIO patches"
         return 0
     fi
     
+    local patches_applied=0
+    
+    # -------------------------------------------------------------------------
+    # Fix A: GPIO initialization (initial_value=True -> False)
+    # -------------------------------------------------------------------------
     # Check if this is the dev branch version (has gpio_manager code)
-    if ! grep -q '_gpio_manager.setup_output_pin' "$sx126x_file" 2>/dev/null; then
-        print_info "SX126x.py doesn't need GPIO patch (main branch or already patched)"
-        return 0
-    fi
-    
-    # Check if already patched (initial_value=False)
-    if grep -q 'initial_value=False' "$sx126x_file" 2>/dev/null; then
-        print_info "GPIO initialization already patched"
-        return 0
-    fi
-    
-    # Apply the fix: change initial_value=True to initial_value=False
-    # This affects _get_output() and _try_get_output() functions
-    sed -i 's/_gpio_manager.setup_output_pin(pin, initial_value=True)/_gpio_manager.setup_output_pin(pin, initial_value=False)/g' "$sx126x_file"
-    
-    # Verify patch was applied
-    if grep -q 'initial_value=False' "$sx126x_file" 2>/dev/null; then
-        print_success "Patched SX126x.py GPIO initialization (initial_value=False)"
+    if grep -q '_gpio_manager.setup_output_pin' "$sx126x_file" 2>/dev/null; then
+        # Check if already patched
+        if grep -q 'initial_value=False' "$sx126x_file" 2>/dev/null; then
+            print_info "GPIO initialization already patched"
+        else
+            # Apply the fix: change initial_value=True to initial_value=False
+            sed -i 's/_gpio_manager.setup_output_pin(pin, initial_value=True)/_gpio_manager.setup_output_pin(pin, initial_value=False)/g' "$sx126x_file"
+            
+            if grep -q 'initial_value=False' "$sx126x_file" 2>/dev/null; then
+                print_success "Fix A: GPIO initialization (initial_value=False)"
+                ((patches_applied++))
+            else
+                print_warning "Fix A may not have applied correctly"
+            fi
+        fi
     else
-        print_warning "GPIO patch may not have applied correctly"
+        print_info "Fix A not needed (main branch or different GPIO implementation)"
+    fi
+    
+    # -------------------------------------------------------------------------
+    # Fix B: TXEN override in request() and listen() methods
+    # -------------------------------------------------------------------------
+    # Check if the problematic pattern exists (TXEN set HIGH in RX methods)
+    if grep -q '_get_output(self._txen).write(True)' "$sx126x_file" 2>/dev/null; then
+        # Comment out the TXEN=HIGH lines - let higher-level code manage TXEN
+        # This pattern appears in both request() and listen() methods
+        sed -i 's/_get_output(self._txen).write(True)/# _get_output(self._txen).write(True)  # PATCHED: E22 needs TXEN managed by wrapper/g' "$sx126x_file"
+        
+        if grep -q 'PATCHED: E22 needs TXEN' "$sx126x_file" 2>/dev/null; then
+            print_success "Fix B: TXEN override disabled in request()/listen()"
+            ((patches_applied++))
+        else
+            print_warning "Fix B may not have applied correctly"
+        fi
+    else
+        # Check if already patched
+        if grep -q 'PATCHED: E22 needs TXEN' "$sx126x_file" 2>/dev/null; then
+            print_info "TXEN override already patched"
+        else
+            print_info "Fix B not needed (TXEN override pattern not found)"
+        fi
+    fi
+    
+    if [ $patches_applied -gt 0 ]; then
+        print_success "Applied $patches_applied GPIO fix(es) to SX126x.py"
     fi
 }
 
