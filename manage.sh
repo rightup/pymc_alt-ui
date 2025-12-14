@@ -437,6 +437,65 @@ run_npm_with_progress() {
     fi
 }
 
+# Run git clone with real-time progress display
+# Shows actual git progress (objects, files) as they're received
+run_git_clone_with_progress() {
+    local branch="$1"
+    local repo_url="$2"
+    local target_dir="$3"
+    local start_time=$(date +%s)
+    
+    echo -e "        ${ARROW} Cloning from ${CYAN}github.com/rightup/pyMC_Repeater${NC}"
+    echo -e "        ${DIM}────────────────────────────────────────${NC}"
+    
+    # Run git clone with progress, parse and display key lines
+    git clone -b "$branch" --progress "$repo_url" "$target_dir" 2>&1 | while IFS= read -r line; do
+        # Parse git progress output
+        if [[ "$line" =~ ^Cloning ]]; then
+            printf "\r        ${DIM}%-50s${NC}" "Initializing..."
+        elif [[ "$line" =~ ^remote:\ Enumerating ]]; then
+            printf "\r        ${DIM}%-50s${NC}" "Enumerating objects..."
+        elif [[ "$line" =~ ^remote:\ Counting ]]; then
+            printf "\r        ${DIM}%-50s${NC}" "Counting objects..."
+        elif [[ "$line" =~ ^remote:\ Compressing ]]; then
+            # Extract percentage if present
+            if [[ "$line" =~ ([0-9]+)% ]]; then
+                printf "\r        ${CYAN}Compressing:${NC} ${BASH_REMATCH[1]}%%%-30s" " "
+            fi
+        elif [[ "$line" =~ ^Receiving\ objects ]]; then
+            # Extract percentage
+            if [[ "$line" =~ ([0-9]+)% ]]; then
+                printf "\r        ${CYAN}Receiving:${NC}   ${BASH_REMATCH[1]}%%%-30s" " "
+            fi
+        elif [[ "$line" =~ ^Resolving\ deltas ]]; then
+            # Extract percentage
+            if [[ "$line" =~ ([0-9]+)% ]]; then
+                printf "\r        ${CYAN}Resolving:${NC}   ${BASH_REMATCH[1]}%%%-30s" " "
+            fi
+        elif [[ "$line" =~ ^Updating\ files ]]; then
+            # Extract percentage
+            if [[ "$line" =~ ([0-9]+)% ]]; then
+                printf "\r        ${CYAN}Extracting:${NC}  ${BASH_REMATCH[1]}%%%-30s" " "
+            fi
+        fi
+    done
+    
+    local exit_code=${PIPESTATUS[0]}
+    local elapsed=$(($(date +%s) - start_time))
+    
+    # Clear progress line
+    printf "\r%-60s\r" " "
+    echo -e "        ${DIM}────────────────────────────────────────${NC}"
+    
+    if [ $exit_code -eq 0 ]; then
+        print_success "Repository cloned ${DIM}(${elapsed}s)${NC}"
+        return 0
+    else
+        print_error "Clone failed"
+        return 1
+    fi
+}
+
 # Print installation banner
 print_banner() {
     clear
@@ -696,7 +755,7 @@ do_install() {
     git config --global --add safe.directory "$CLONE_DIR" 2>/dev/null || true
     git config --global --add safe.directory "$INSTALL_DIR" 2>/dev/null || true
     
-    run_npm_with_progress "Cloning repository" "git clone -b '$branch' https://github.com/rightup/pyMC_Repeater.git '$CLONE_DIR'" || {
+    run_git_clone_with_progress "$branch" "https://github.com/rightup/pyMC_Repeater.git" "$CLONE_DIR" || {
         print_error "Failed to clone pyMC_Repeater"
         print_info "Check if branch '$branch' exists"
         return 1
@@ -708,13 +767,10 @@ do_install() {
     local git_commit=$(git rev-parse --short HEAD)
     local git_date=$(git log -1 --format=%cd --date=short)
     local git_msg=$(git log -1 --format=%s | cut -c1-50)
-    echo ""
     echo -e "        ${BOLD}Source Verification${NC}"
-    echo -e "        ${DIM}────────────────────────────────────────${NC}"
     echo -e "        Branch:  ${CYAN}${git_branch}${NC}"
     echo -e "        Commit:  ${CYAN}${git_commit}${NC} ${DIM}(${git_date})${NC}"
-    echo -e "        Message: ${DIM}${git_msg}${NC}"
-    echo -e "        ${DIM}────────────────────────────────────────${NC}"
+    echo -e "        Message: ${DIM}${git_msg}...${NC}"
     echo ""
     
     # -------------------------------------------------------------------------
@@ -941,7 +997,7 @@ do_upgrade() {
     if [ ! -d "$CLONE_DIR/.git" ]; then
         print_info "Clone not found, creating fresh clone..."
         rm -rf "$CLONE_DIR" 2>/dev/null || true
-        run_npm_with_progress "Cloning repository" "git clone -b '$branch' https://github.com/rightup/pyMC_Repeater.git '$CLONE_DIR'" || {
+        run_git_clone_with_progress "$branch" "https://github.com/rightup/pyMC_Repeater.git" "$CLONE_DIR" || {
             print_error "Failed to clone pyMC_Repeater"
             return 1
         }
@@ -963,8 +1019,8 @@ do_upgrade() {
             print_error "Failed to pull branch $branch"
             return 1
         }
+        print_success "Repository updated"
     fi
-    print_success "Repository updated"
     
     # Show verified git info so user can confirm what was pulled
     cd "$CLONE_DIR"
@@ -972,13 +1028,10 @@ do_upgrade() {
     local git_commit=$(git rev-parse --short HEAD)
     local git_date=$(git log -1 --format=%cd --date=short)
     local git_msg=$(git log -1 --format=%s | cut -c1-50)
-    echo ""
     echo -e "        ${BOLD}Source Verification${NC}"
-    echo -e "        ${DIM}────────────────────────────────────────${NC}"
     echo -e "        Branch:  ${CYAN}${git_branch}${NC}"
     echo -e "        Commit:  ${CYAN}${git_commit}${NC} ${DIM}(${git_date})${NC}"
-    echo -e "        Message: ${DIM}${git_msg}${NC}"
-    echo -e "        ${DIM}────────────────────────────────────────${NC}"
+    echo -e "        Message: ${DIM}${git_msg}...${NC}"
     echo ""
     
     # -------------------------------------------------------------------------
