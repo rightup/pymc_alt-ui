@@ -684,56 +684,25 @@ do_install() {
     echo -e "  ${DIM}Clone: $CLONE_DIR${NC}"
     echo -e "  ${DIM}Install: $INSTALL_DIR${NC}"
     
-    local total_steps=9
+    local total_steps=6
     
     # =========================================================================
-    # Step 1: Create service user
+    # Step 1: Install prerequisites (whiptail needed by upstream)
     # =========================================================================
-    print_step 1 $total_steps "Creating service user"
-    
-    if id "$SERVICE_USER" &>/dev/null; then
-        print_info "User '$SERVICE_USER' already exists"
-    else
-        if useradd --system --home /var/lib/pymc_repeater --shell /sbin/nologin "$SERVICE_USER" 2>/dev/null; then
-            print_success "Created user '$SERVICE_USER'"
-        else
-            print_error "Failed to create user '$SERVICE_USER'"
-            return 1
-        fi
-    fi
-    
-    usermod -a -G gpio,i2c,spi "$SERVICE_USER" 2>/dev/null || true
-    usermod -a -G dialout "$SERVICE_USER" 2>/dev/null || true
-    print_success "Added user to hardware groups"
-    
-    # =========================================================================
-    # Step 2: Create directories
-    # =========================================================================
-    print_step 2 $total_steps "Creating directories"
-    
-    mkdir -p "$INSTALL_DIR" && print_success "$INSTALL_DIR"
-    mkdir -p "$CONSOLE_DIR" && print_success "$CONSOLE_DIR"
-    mkdir -p "$CONFIG_DIR" && print_success "$CONFIG_DIR"
-    mkdir -p "$LOG_DIR" && print_success "$LOG_DIR"
-    mkdir -p /var/lib/pymc_repeater && print_success "/var/lib/pymc_repeater"
-    mkdir -p /var/lib/pymc_repeater/.config/pymc_repeater && print_success "/var/lib/pymc_repeater/.config"
-    
-    # =========================================================================
-    # Step 3: Install system dependencies
-    # =========================================================================
-    print_step 3 $total_steps "Installing system dependencies"
+    print_step 1 $total_steps "Installing prerequisites"
     
     run_with_spinner "Updating package lists" "apt-get update -qq" || {
         print_error "Failed to update package lists"
         return 1
     }
     
-    run_with_spinner "Installing required packages" "apt-get install -y libffi-dev jq python3-pip python3-rrdtool wget swig build-essential python3-dev curl git liblgpio-dev" || {
-        print_error "Failed to install system packages"
+    # Install whiptail (needed by upstream) and git
+    run_with_spinner "Installing required packages" "apt-get install -y whiptail git curl" || {
+        print_error "Failed to install prerequisites"
         return 1
     }
     
-    # Install yq
+    # Install yq (we use it for config manipulation)
     if ! command -v yq &> /dev/null || [[ "$(yq --version 2>&1)" != *"mikefarah/yq"* ]]; then
         run_with_spinner "Installing yq" "install_yq_silent" || print_warning "yq installation failed (non-critical)"
     else
@@ -741,9 +710,9 @@ do_install() {
     fi
     
     # =========================================================================
-    # Step 4: Clone pyMC_Repeater to sibling directory
+    # Step 2: Clone pyMC_Repeater
     # =========================================================================
-    print_step 4 $total_steps "Cloning pyMC_Repeater@$branch"
+    print_step 2 $total_steps "Cloning pyMC_Repeater@$branch"
     
     # Remove existing clone if present (fresh install)
     if [ -d "$CLONE_DIR" ]; then
@@ -773,60 +742,36 @@ do_install() {
     echo -e "        Message: ${DIM}${git_msg}...${NC}"
     echo ""
     
-    # -------------------------------------------------------------------------
-    # Apply upstream patches to the clone (see UPSTREAM PATCHES section)
-    # These will be removed once merged into pyMC_Repeater
-    # -------------------------------------------------------------------------
-print_info "Applying patches to clone..."
-    patch_nextjs_static_serving "$CLONE_DIR"   # PATCH 1: Next.js static export support
-    patch_api_endpoints "$CLONE_DIR"           # PATCH 2: Radio config API endpoint
-    patch_logging_section "$CLONE_DIR"         # PATCH 3: Ensure logging section exists
-    
     # =========================================================================
-    # Step 5: Copy files to install directory (mirrors upstream manage.sh)
+    # Step 3: Run upstream installer (via UPSTREAM INSTALLATION MANAGER)
     # =========================================================================
-    print_step 5 $total_steps "Installing files to $INSTALL_DIR"
+    print_step 3 $total_steps "Running pyMC_Repeater installer"
     
-    # Copy files from clone to install dir (same as upstream)
-    cp -r "$CLONE_DIR/repeater" "$INSTALL_DIR/"
-    cp "$CLONE_DIR/pyproject.toml" "$INSTALL_DIR/"
-    cp "$CLONE_DIR/README.md" "$INSTALL_DIR/"
-    [ -f "$CLONE_DIR/setup-radio-config.sh" ] && cp "$CLONE_DIR/setup-radio-config.sh" "$INSTALL_DIR/"
-    [ -f "$CLONE_DIR/radio-settings.json" ] && cp "$CLONE_DIR/radio-settings.json" "$INSTALL_DIR/"
-    print_success "Files copied to $INSTALL_DIR"
-    
-    # =========================================================================
-    # Step 6: Install Python dependencies (not the repeater package itself)
-    # =========================================================================
-    print_step 6 $total_steps "Installing Python dependencies"
-    
-    # Install from clone directory
-    cd "$CLONE_DIR"
-    
-    # Only install dependencies, NOT the repeater package itself.
-    # The service runs from /opt/pymc_repeater with PYTHONPATH set, so we don't need
-    # the repeater package in site-packages. We only need its dependencies (pymc_core, cherrypy, etc.)
-    # Using --no-deps with '.' would skip deps, so we install deps explicitly from pyproject.toml
-    run_npm_with_progress "Installing dependencies" "pip install --break-system-packages --force-reinstall --no-cache-dir 'pymc_core[hardware] @ git+https://github.com/rightup/pyMC_core.git@${branch}' cherrypy pyyaml" || {
-        print_error "Failed to install Python dependencies"
-        print_info "Branch '$branch' must exist in pymc_core repo"
+    # This runs upstream's manage.sh install with our fake dialog to bypass TUI
+    # Upstream handles: user creation, directories, deps, pip install, service, config
+    run_upstream_installer "install" "$branch" || {
+        print_error "Upstream installation failed"
         return 1
     }
     
     # =========================================================================
-    # Step 7: Setup configuration
+    # Step 4: Apply patches to installed files
     # =========================================================================
-    print_step 7 $total_steps "Setting up configuration"
+    print_step 4 $total_steps "Applying pyMC Console patches"
     
-    cp "$CLONE_DIR/config.yaml.example" "$CONFIG_DIR/config.yaml.example" && \
-        print_success "Copied example configuration"
+    # Apply patches to /opt/pymc_repeater (the installed location, not the clone)
+    print_info "Patching installed files..."
+    patch_nextjs_static_serving "$INSTALL_DIR"   # PATCH 1: Next.js static export support
+    patch_api_endpoints "$INSTALL_DIR"           # PATCH 2: Radio config API endpoint
+    patch_logging_section "$INSTALL_DIR"         # PATCH 3: Ensure logging section exists
     
-    if [ ! -f "$CONFIG_DIR/config.yaml" ]; then
-        cp "$CLONE_DIR/config.yaml.example" "$CONFIG_DIR/config.yaml"
-        print_success "Created config.yaml"
-    else
-        print_info "config.yaml already exists, preserving"
-    fi
+    # =========================================================================
+    # Step 5: Install dashboard and console extras
+    # =========================================================================
+    print_step 5 $total_steps "Installing pyMC Console dashboard"
+    
+    # Create console directory for our extras
+    mkdir -p "$CONSOLE_DIR"
     
     # Copy radio settings files to console dir
     if [ -f "$CLONE_DIR/radio-settings.json" ]; then
@@ -839,44 +784,29 @@ print_info "Applying patches to clone..."
         print_success "Copied radio-presets.json"
     fi
     
-    # =========================================================================
-    # Step 8: Create backend systemd service
-    # =========================================================================
-    print_step 8 $total_steps "Installing backend service"
-    
-    install_backend_service
-    
-    # =========================================================================
-    # Step 9: Install static frontend and finalize
-    # =========================================================================
-    print_step 9 $total_steps "Installing frontend and finalizing"
-    
+    # Install our Next.js dashboard (overlays upstream's Vue.js frontend)
     install_static_frontend || {
         print_error "Frontend installation failed"
         return 1
     }
     
-    print_info "Setting permissions..."
-    chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR" "$CONSOLE_DIR" "$CONFIG_DIR" "$LOG_DIR" /var/lib/pymc_repeater
-    chmod 750 "$CONFIG_DIR" "$LOG_DIR"
-    chmod 755 /var/lib/pymc_repeater
-    print_success "Permissions configured"
+    # Fix permissions for console directory
+    chown -R "$SERVICE_USER:$SERVICE_USER" "$CONSOLE_DIR" 2>/dev/null || true
     
-    print_info "Enabling service..."
-    systemctl daemon-reload
-    systemctl enable "$BACKEND_SERVICE" >/dev/null 2>&1
-    print_success "Service enabled"
+    # =========================================================================
+    # Step 6: Finalize installation
+    # =========================================================================
+    print_step 6 $total_steps "Finalizing installation"
     
-    print_info "Starting backend service..."
-    if systemctl start "$BACKEND_SERVICE"; then
-        sleep 2
-        if backend_running; then
-            print_success "Backend service running (serves API + frontend)"
-        else
-            print_warning "Backend service started but may not be healthy"
-        fi
+    # Restart service to pick up patches and dashboard
+    print_info "Restarting service with patches applied..."
+    systemctl restart "$BACKEND_SERVICE" 2>/dev/null || true
+    sleep 2
+    
+    if backend_running; then
+        print_success "Backend service running"
     else
-        print_warning "Backend service failed to start (configure radio settings first)"
+        print_warning "Backend service may need configuration"
     fi
     
     # Clear error trap
@@ -970,27 +900,24 @@ do_upgrade() {
     echo -e "  ${DIM}Current version: $current_version${NC}"
     echo -e "  ${DIM}Clone: $CLONE_DIR${NC}"
     
-    local total_steps=7
+    local total_steps=5
     
     # =========================================================================
-    # Step 1: Stop service
+    # Step 1: Backup configuration
     # =========================================================================
-    print_step 1 $total_steps "Stopping service"
-    systemctl stop "$BACKEND_SERVICE" 2>/dev/null || true
-    print_success "Service stopped"
-    
-    # =========================================================================
-    # Step 2: Backup configuration
-    # =========================================================================
-    print_step 2 $total_steps "Backing up configuration"
+    print_step 1 $total_steps "Backing up configuration"
     local backup_file="$CONFIG_DIR/config.yaml.backup.$(date +%Y%m%d_%H%M%S)"
-    cp "$CONFIG_DIR/config.yaml" "$backup_file"
-    print_success "Backup saved to: $backup_file"
+    if [ -f "$CONFIG_DIR/config.yaml" ]; then
+        cp "$CONFIG_DIR/config.yaml" "$backup_file"
+        print_success "Backup saved to: $backup_file"
+    else
+        print_info "No existing config to backup"
+    fi
     
     # =========================================================================
-    # Step 3: Update pyMC_Repeater clone
+    # Step 2: Update pyMC_Repeater clone
     # =========================================================================
-    print_step 3 $total_steps "Updating pyMC_Repeater@$branch"
+    print_step 2 $total_steps "Updating pyMC_Repeater@$branch"
     
     # Mark directories as safe for git (running as root on user-owned dir)
     git config --global --add safe.directory "$CLONE_DIR" 2>/dev/null || true
@@ -1037,83 +964,53 @@ do_upgrade() {
     echo -e "        Message: ${DIM}${git_msg}...${NC}"
     echo ""
     
-    # -------------------------------------------------------------------------
-    # Apply upstream patches to the clone (see UPSTREAM PATCHES section)
-    # -------------------------------------------------------------------------
-print_info "Applying patches to clone..."
-    patch_nextjs_static_serving "$CLONE_DIR"   # PATCH 1: Next.js static export support
-    patch_api_endpoints "$CLONE_DIR"           # PATCH 2: Radio config API endpoint
-    patch_logging_section "$CLONE_DIR"         # PATCH 3: Ensure logging section exists
-    
     # =========================================================================
-    # Step 4: Copy updated files to install directory
+    # Step 3: Run upstream upgrade (via UPSTREAM INSTALLATION MANAGER)
     # =========================================================================
-    print_step 4 $total_steps "Updating files in $INSTALL_DIR"
+    print_step 3 $total_steps "Running pyMC_Repeater upgrade"
     
-    # Copy files from clone to install dir (same as upstream)
-    cp -r "$CLONE_DIR/repeater" "$INSTALL_DIR/"
-    cp "$CLONE_DIR/pyproject.toml" "$INSTALL_DIR/"
-    cp "$CLONE_DIR/README.md" "$INSTALL_DIR/"
-    [ -f "$CLONE_DIR/setup-radio-config.sh" ] && cp "$CLONE_DIR/setup-radio-config.sh" "$INSTALL_DIR/"
-    [ -f "$CLONE_DIR/radio-settings.json" ] && cp "$CLONE_DIR/radio-settings.json" "$INSTALL_DIR/"
-    print_success "Files updated"
-    
-    # =========================================================================
-    # Step 5: Update Python dependencies (not the repeater package itself)
-    # =========================================================================
-    print_step 5 $total_steps "Updating Python dependencies"
-    
-    # Install from clone directory
-    cd "$CLONE_DIR"
-    
-    # Only install dependencies, NOT the repeater package itself.
-    # The service runs from /opt/pymc_repeater with PYTHONPATH set.
-    run_npm_with_progress "Updating dependencies" "pip install --break-system-packages --force-reinstall --no-cache-dir 'pymc_core[hardware] @ git+https://github.com/rightup/pyMC_core.git@${branch}' cherrypy pyyaml" || {
-        print_error "Failed to install Python dependencies"
-        print_info "Branch '$branch' must exist in pymc_core repo"
+    # This runs upstream's manage.sh upgrade with our fake dialog to bypass TUI
+    # Upstream handles: stopping service, updating files, pip install, config merge, starting service
+    run_upstream_installer "upgrade" "$branch" || {
+        print_error "Upstream upgrade failed"
         return 1
     }
     
     # =========================================================================
-    # Step 6: Update configuration & frontend
+    # Step 4: Apply patches and update dashboard
     # =========================================================================
-    print_step 6 $total_steps "Updating configuration & frontend"
+    print_step 4 $total_steps "Applying pyMC Console patches & dashboard"
     
-    merge_config "$CONFIG_DIR/config.yaml" "$CLONE_DIR/config.yaml.example"
-    print_success "Configuration merged"
+    # Apply patches to /opt/pymc_repeater (the installed location)
+    print_info "Patching installed files..."
+    patch_nextjs_static_serving "$INSTALL_DIR"   # PATCH 1: Next.js static export support
+    patch_api_endpoints "$INSTALL_DIR"           # PATCH 2: Radio config API endpoint
+    patch_logging_section "$INSTALL_DIR"         # PATCH 3: Ensure logging section exists
     
-    # Update static frontend files
+    # Update our Next.js dashboard (overlays upstream's frontend)
     if [ -d "$SCRIPT_DIR/frontend/out" ]; then
         local target_dir="$INSTALL_DIR/repeater/web/html"
         rm -rf "$target_dir" 2>/dev/null || true
         mkdir -p "$target_dir"
         cp -r "$SCRIPT_DIR/frontend/out/"* "$target_dir/"
-        chown -R "$SERVICE_USER:$SERVICE_USER" "$target_dir"
+        chown -R "$SERVICE_USER:$SERVICE_USER" "$target_dir" 2>/dev/null || true
         print_success "Dashboard updated"
     else
         print_warning "Frontend build not found - dashboard not updated"
     fi
     
-    install_backend_service
-    systemctl daemon-reload
-    
-    # Fix permissions
-    chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR" "$CONFIG_DIR" "$LOG_DIR" /var/lib/pymc_repeater 2>/dev/null || true
-    
     # =========================================================================
-    # Step 7: Start service
+    # Step 5: Restart service with patches
     # =========================================================================
-    print_step 7 $total_steps "Starting service"
+    print_step 5 $total_steps "Restarting service"
     
-    if systemctl start "$BACKEND_SERVICE"; then
-        sleep 2
-        if backend_running; then
-            print_success "Service running"
-        else
-            print_warning "Service started but may not be healthy"
-        fi
+    systemctl restart "$BACKEND_SERVICE" 2>/dev/null || true
+    sleep 2
+    
+    if backend_running; then
+        print_success "Service running"
     else
-        print_warning "Service failed to start"
+        print_warning "Service may need configuration"
     fi
     
     # Show completion
@@ -1832,63 +1729,59 @@ do_uninstall() {
     echo "=== pyMC Console Uninstall ==="
     echo ""
     
-    echo "[1/7] Stopping service..."
-    systemctl stop "$BACKEND_SERVICE" 2>/dev/null || true
-    systemctl disable "$BACKEND_SERVICE" 2>/dev/null || true
+    # =========================================================================
+    # Step 1: Run upstream uninstaller first (via UPSTREAM INSTALLATION MANAGER)
+    # =========================================================================
+    echo "[1/4] Running pyMC_Repeater uninstaller..."
     
-    echo "[2/7] Backing up configuration..."
-    local backup_path=""
-    if [ -d "$CONFIG_DIR" ]; then
-        backup_path="/tmp/pymc_config_backup_$(date +%Y%m%d_%H%M%S)"
-        cp -r "$CONFIG_DIR" "$backup_path"
-        echo "    Backup saved to: $backup_path"
+    # Only run upstream uninstall if clone exists with manage.sh
+    if [ -f "$CLONE_DIR/manage.sh" ]; then
+        run_upstream_installer "uninstall" || {
+            echo "    ⚠ Upstream uninstall had issues, continuing with cleanup..."
+        }
+    else
+        echo "    Clone not found, performing manual cleanup..."
+        # Manual cleanup if no clone (matches what upstream does)
+        systemctl stop "$BACKEND_SERVICE" 2>/dev/null || true
+        systemctl disable "$BACKEND_SERVICE" 2>/dev/null || true
+        rm -f /etc/systemd/system/pymc-repeater.service
+        systemctl daemon-reload
+        rm -rf "$INSTALL_DIR"
+        rm -rf "$CONFIG_DIR"
+        rm -rf "$LOG_DIR"
+        rm -rf /var/lib/pymc_repeater
+        if id "$SERVICE_USER" &>/dev/null; then
+            userdel "$SERVICE_USER" 2>/dev/null || true
+        fi
     fi
     
-    echo "[3/7] Removing systemd services..."
-    rm -f /etc/systemd/system/pymc-repeater.service
-    rm -f /etc/systemd/system/pymc-frontend.service
-    systemctl daemon-reload
+    # =========================================================================
+    # Step 2: Remove pyMC Console extras (not handled by upstream)
+    # =========================================================================
+    echo "[2/4] Removing pyMC Console extras..."
+    rm -rf "$CONSOLE_DIR"
+    rm -rf "/opt/pymc_console"  # Old path
+    echo "    ✓ Console directories removed"
     
-    echo "[4/7] Uninstalling Python packages..."
-    # Uninstall system-wide pip packages
+    # =========================================================================
+    # Step 3: Clean up any leftover site-packages (pip leftovers)
+    # =========================================================================
+    echo "[3/4] Cleaning up Python packages..."
     pip uninstall -y pymc_repeater 2>/dev/null || true
     pip uninstall -y pymc_core 2>/dev/null || true
     pip uninstall -y pymc-repeater 2>/dev/null || true
     pip uninstall -y pymc-core 2>/dev/null || true
-    # Also remove any leftover site-packages directories (pip uninstall may not fully clean up)
-    # Note: site_packages variable defined at start of function
+    # Remove any leftover directories
     rm -rf "$site_packages/repeater" 2>/dev/null || true
     rm -rf "$site_packages/pymc_core" 2>/dev/null || true
     rm -rf "$site_packages/pymc_repeater"* 2>/dev/null || true
     rm -rf "$site_packages/pymc_core"* 2>/dev/null || true
-    echo "    ✓ Python packages removed"
+    echo "    ✓ Python packages cleaned"
     
-    echo "[5/7] Removing installation directories..."
-    # Remove install dir
-    rm -rf "$INSTALL_DIR"
-    rm -rf "$CONSOLE_DIR"
-    # Remove old paths (from previous versions)
-    rm -rf "/opt/pymc_console"
-    echo "    ✓ Installation directories removed"
-    # Note: We intentionally do NOT remove CLONE_DIR
-    # It's in the user's home directory and may contain uncommitted changes
-    if [ "$has_clone" = true ]; then
-        echo "    Note: Clone at $CLONE_DIR preserved"
-    fi
-    
-    echo "[6/7] Removing configuration and logs..."
-    rm -rf "$CONFIG_DIR"
-    rm -rf "$LOG_DIR"
-    rm -rf /var/lib/pymc_repeater
-    echo "    ✓ Config and logs removed"
-    
-    echo "[7/7] Removing service user..."
-    if id "$SERVICE_USER" &>/dev/null; then
-        userdel "$SERVICE_USER" 2>/dev/null || true
-        echo "    ✓ User '$SERVICE_USER' removed"
-    else
-        echo "    User '$SERVICE_USER' not found (already removed)"
-    fi
+    # =========================================================================
+    # Step 4: Handle clone directory
+    # =========================================================================
+    echo "[4/4] Finalizing..."
     
     echo ""
     echo "=== Uninstall Complete ==="
@@ -1905,17 +1798,7 @@ do_uninstall() {
         echo ""
     fi
     
-    # Offer to delete backup
-    if [ -n "$backup_path" ] && [ -d "$backup_path" ]; then
-        if ask_yes_no "Delete Backup?" "\nA backup of your configuration was saved to:\n$backup_path\n\nWould you like to delete this backup?\n\n(Choose 'No' to keep it for future reference)"; then
-            rm -rf "$backup_path"
-            show_info "Uninstall Complete" "\npyMC Console has been completely removed.\n\nBackup deleted.\n\nThank you for using pyMC Console!"
-        else
-            show_info "Uninstall Complete" "\npyMC Console has been completely removed.\n\nConfiguration backup saved to:\n$backup_path\n\nThank you for using pyMC Console!"
-        fi
-    else
-        show_info "Uninstall Complete" "\npyMC Console has been completely removed.\n\nThank you for using pyMC Console!"
-    fi
+    show_info "Uninstall Complete" "\npyMC Console has been completely removed.\n\nThank you for using pyMC Console!"
 }
 
 # ============================================================================
@@ -2010,6 +1893,139 @@ install_yq_silent() {
     fi
     
     wget -qO /usr/local/bin/yq "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/${YQ_BINARY}" && chmod +x /usr/local/bin/yq
+}
+
+# ============================================================================
+# UPSTREAM INSTALLATION MANAGER
+# ============================================================================
+# This section handles running pyMC_Repeater's native manage.sh installer.
+# We wrap upstream's installer to provide a unified experience while ensuring
+# we stay compatible with upstream updates.
+#
+# The approach:
+# 1. Clone/update pyMC_Repeater to a sibling directory
+# 2. Run upstream's manage.sh (install/upgrade/uninstall) non-interactively
+# 3. Apply our patches to the installed files (/opt/pymc_repeater)
+# 4. Overlay our dashboard and run our configuration
+#
+# To bypass upstream's whiptail TUI, we create a fake dialog script that
+# auto-accepts all prompts. This gives users our unified installer experience.
+#
+# TODO: Work with upstream dev to add a --non-interactive flag to their
+# manage.sh, which would make this wrapper much cleaner.
+# ============================================================================
+
+# Create a fake dialog/whiptail script that auto-accepts everything
+# This allows upstream's manage.sh to run non-interactively
+create_fake_dialog() {
+    local fake_dialog="/tmp/pymc_fake_dialog"
+    
+    cat > "$fake_dialog" << 'FAKEDIALOG'
+#!/bin/bash
+# Fake whiptail/dialog that auto-accepts everything
+# Used by pymc_console to run upstream installer non-interactively
+
+# Parse arguments to determine dialog type
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --yesno)
+            # Auto-accept yes/no dialogs
+            exit 0
+            ;;
+        --msgbox|--infobox)
+            # Silently acknowledge message boxes
+            exit 0
+            ;;
+        --gauge)
+            # Consume gauge input silently
+            cat > /dev/null
+            exit 0
+            ;;
+        --inputbox|--passwordbox)
+            # Return empty string for input boxes
+            echo ""
+            exit 0
+            ;;
+        --menu|--radiolist|--checklist)
+            # Return first option for menus
+            echo "1"
+            exit 0
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
+exit 0
+FAKEDIALOG
+    
+    chmod +x "$fake_dialog"
+    echo "$fake_dialog"
+}
+
+# Run upstream's manage.sh with a specific action, bypassing TUI
+# Usage: run_upstream_installer <action> [branch]
+# Actions: install, upgrade, uninstall
+run_upstream_installer() {
+    local action="$1"
+    local branch="${2:-$DEFAULT_BRANCH}"
+    local fake_dialog
+    local upstream_script="$CLONE_DIR/manage.sh"
+    local log_file=$(mktemp)
+    local exit_code=0
+    
+    # Verify clone exists
+    if [ ! -f "$upstream_script" ]; then
+        print_error "Upstream manage.sh not found at $upstream_script"
+        return 1
+    fi
+    
+    # Create fake dialog to bypass TUI
+    fake_dialog=$(create_fake_dialog)
+    
+    # Temporarily rename setup-radio-config.sh to skip upstream's radio config
+    # We run our own config after installation
+    local radio_config_script="$CLONE_DIR/setup-radio-config.sh"
+    local radio_config_backup=""
+    if [ -f "$radio_config_script" ]; then
+        radio_config_backup="${radio_config_script}.pymc_backup"
+        mv "$radio_config_script" "$radio_config_backup"
+    fi
+    
+    print_info "Running upstream installer ($action)..."
+    
+    # Run upstream's manage.sh with fake dialog
+    # We use env to override DIALOG and run from the clone directory
+    (
+        cd "$CLONE_DIR"
+        # Export DIALOG to use our fake, and set DEBIAN_FRONTEND to skip other prompts
+        export DIALOG="$fake_dialog"
+        export DEBIAN_FRONTEND=noninteractive
+        # Run the action
+        bash "$upstream_script" "$action"
+    ) > "$log_file" 2>&1
+    exit_code=$?
+    
+    # Restore radio config script if we backed it up
+    if [ -n "$radio_config_backup" ] && [ -f "$radio_config_backup" ]; then
+        mv "$radio_config_backup" "$radio_config_script"
+    fi
+    
+    # Clean up fake dialog
+    rm -f "$fake_dialog"
+    
+    # Check result
+    if [ $exit_code -eq 0 ]; then
+        print_success "Upstream $action completed"
+        rm -f "$log_file"
+        return 0
+    else
+        print_error "Upstream $action failed (exit code: $exit_code)"
+        echo -e "        ${DIM}Log output:${NC}"
+        tail -30 "$log_file" | sed 's/^/        /'
+        rm -f "$log_file"
+        return 1
+    fi
 }
 
 # ============================================================================
