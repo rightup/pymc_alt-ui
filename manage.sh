@@ -2084,7 +2084,7 @@ PATCHEOF
 # ------------------------------------------------------------------------------
 # Files patched:
 #   - pymc_core/hardware/lora/LoRaRF/SX126x.py (Fix A, Fix B)
-#   - pymc_core/hardware/sx1262_wrapper.py (Fix C)
+#   - pymc_core/hardware/sx1262_wrapper.py (Fix C, Fix D)
 #
 # Purpose: Fix GPIO bugs that break RX on E22 modules with external PA/LNA
 # 
@@ -2106,9 +2106,21 @@ PATCHEOF
 #   on restart because RXEN may not be HIGH when entering RX mode.
 #   Fix: Add _control_tx_rx_pins(tx_mode=False) before RX_CONTINUOUS at init.
 #
-# For E22 modules with external PA/LNA:
+# Fix D - Inverted RF Switch Logic (sx1262_wrapper.py):
+#   Some E22 module variants have the TXEN/RXEN pin labels swapped internally.
+#   Testing shows the antenna path connects to RX when TXEN=HIGH, RXEN=LOW
+#   (the opposite of what the labels suggest). This is confirmed by measuring
+#   RSSI: the correct RX config gives ~-110dBm noise floor, wrong gives ~-79dBm.
+#   Fix: Invert the pin states in _control_tx_rx_pins():
+#        - RX mode: set_pin_high(txen), set_pin_low(rxen)
+#        - TX mode: set_pin_low(txen), set_pin_high(rxen)
+#
+# For E22 modules with external PA/LNA (standard labeling):
 #   - RX mode requires: TXEN=LOW, RXEN=HIGH  
 #   - TX mode requires: TXEN=HIGH, RXEN=LOW
+# For E22 modules with INVERTED labeling:
+#   - RX mode requires: TXEN=HIGH, RXEN=LOW
+#   - TX mode requires: TXEN=LOW, RXEN=HIGH
 #
 # Observable Symptoms (before patch):
 #   - GPIO12 (RXEN) = HIGH, GPIO13 (TXEN) = HIGH (both HIGH = broken)
@@ -2230,6 +2242,47 @@ patch_pymc_core_gpio() {
         fi
     else
         print_info "sx1262_wrapper.py not found, skipping Fix C"
+    fi
+    
+    # -------------------------------------------------------------------------
+    # Fix D: Invert RF switch pin logic in _control_tx_rx_pins()
+    # -------------------------------------------------------------------------
+    # Some E22 modules have internally swapped TXEN/RXEN pin labels.
+    # The physical antenna path connects to RX when TXEN=HIGH (not LOW).
+    # This inverts the logic so RX uses TXEN=HIGH, RXEN=LOW.
+    if [ -n "$wrapper_file" ] && [ -f "$wrapper_file" ]; then
+        # Check if already patched (look for INVERTED marker)
+        if grep -q 'INVERTED for E22' "$wrapper_file" 2>/dev/null; then
+            print_info "RF switch inversion already patched"
+        else
+            # Check if the standard pattern exists
+            if grep -q 'self._gpio_manager.set_pin_high(self.txen_pin)' "$wrapper_file" 2>/dev/null; then
+                # Invert the TX mode logic: HIGH->LOW, LOW->HIGH
+                # TX mode currently: txen=HIGH, rxen=LOW -> change to txen=LOW, rxen=HIGH
+                sed -i 's/# TX: TXEN=HIGH, RXEN=LOW/# TX: TXEN=LOW, RXEN=HIGH (INVERTED for E22)/g' "$wrapper_file"
+                sed -i '/if tx_mode:/,/set_pin_low(self.rxen_pin)/ {
+                    s/set_pin_high(self.txen_pin)/set_pin_low(self.txen_pin)/
+                    s/set_pin_low(self.rxen_pin)/set_pin_high(self.rxen_pin)/
+                }' "$wrapper_file"
+                
+                # Invert the RX mode logic: LOW->HIGH, HIGH->LOW
+                # RX mode currently: txen=LOW, rxen=HIGH -> change to txen=HIGH, rxen=LOW
+                sed -i 's/# RX or idle: TXEN=LOW, RXEN=HIGH/# RX or idle: TXEN=HIGH, RXEN=LOW (INVERTED for E22)/g' "$wrapper_file"
+                sed -i '/else:/,/set_pin_high(self.rxen_pin)/ {
+                    s/set_pin_low(self.txen_pin)/set_pin_high(self.txen_pin)/
+                    s/set_pin_high(self.rxen_pin)/set_pin_low(self.rxen_pin)/
+                }' "$wrapper_file"
+                
+                if grep -q 'INVERTED for E22' "$wrapper_file" 2>/dev/null; then
+                    print_success "Fix D: RF switch pin logic inverted"
+                    ((patches_applied++)) || true
+                else
+                    print_warning "Fix D may not have applied correctly"
+                fi
+            else
+                print_info "Fix D not needed (pin control pattern not found)"
+            fi
+        fi
     fi
     
     if [ $patches_applied -gt 0 ]; then
