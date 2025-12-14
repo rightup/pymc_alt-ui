@@ -27,6 +27,7 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
+CYAN_BRIGHT='\033[1;96m'  # Bright/bold cyan for glow effect
 BOLD='\033[1m'
 DIM='\033[2m'
 NC='\033[0m' # No Color
@@ -285,6 +286,18 @@ cubic_ease_inout() {
     fi
 }
 
+# Calculate velocity (derivative) of cubic ease-in-out at point t
+# Returns 0-100 where 100 is max velocity (at t=50, the inflection point)
+cubic_ease_velocity() {
+    local t=$1  # 0-100
+    # Derivative of cubic ease-in-out: 6t(1-t) scaled to 0-100
+    # Max velocity occurs at t=50 (middle of the curve)
+    # At t=0 or t=100, velocity is 0 (stationary at endpoints)
+    local velocity=$(( (6 * t * (100 - t)) / 100 ))
+    # Normalize to 0-100 range (max is 150 at t=50, so scale by 2/3)
+    echo $(( (velocity * 100) / 150 ))
+}
+
 # Run npm with animated progress bar
 run_npm_with_progress() {
     local description="$1"
@@ -325,10 +338,24 @@ run_npm_with_progress() {
         # Apply cubic easing
         local eased_t=$(cubic_ease_inout $linear_t)
         
+        # Calculate velocity for motion blur and glow effects
+        local velocity=$(cubic_ease_velocity $linear_t)
+        
         # Convert to bar position
         local anim_pos=$(( (eased_t * (width - cursor_width)) / 100 ))
         
-        # Build bar with gradient effect using smaller Unicode blocks
+        # Determine trail length based on velocity (more motion blur when fast)
+        # velocity 0-30: no trail (slow/stopped), 30-60: short trail, 60+: full trail
+        local show_trail=0
+        [ $velocity -gt 30 ] && show_trail=1
+        local full_trail=0
+        [ $velocity -gt 60 ] && full_trail=1
+        
+        # Use bright glow color when at high velocity (peak speed)
+        local cursor_color="$CYAN"
+        [ $velocity -gt 70 ] && cursor_color="$CYAN_BRIGHT"
+        
+        # Build bar with velocity-based effects
         local bar=""
         for ((j=0; j<width; j++)); do
             local dist_from_cursor
@@ -340,19 +367,19 @@ run_npm_with_progress() {
                 dist_from_cursor=0
             fi
             
-            # Use gradient: ▓▒░ for trail effect
+            # Motion blur effect: trail only appears when moving fast
             if [ $dist_from_cursor -eq 0 ]; then
-                bar+="█"  # Cursor
-            elif [ $dist_from_cursor -eq 1 ]; then
-                bar+="▓"  # Near trail
-            elif [ $dist_from_cursor -eq 2 ]; then
-                bar+="▒"  # Medium trail
+                bar+="█"  # Solid cursor always visible
+            elif [ $show_trail -eq 1 ] && [ $dist_from_cursor -eq 1 ]; then
+                bar+="▓"  # Near trail (motion blur) - only when moving
+            elif [ $full_trail -eq 1 ] && [ $dist_from_cursor -eq 2 ]; then
+                bar+="▒"  # Extended trail - only at high speed
             else
                 bar+="░"  # Background
             fi
         done
         
-        printf "\r        ${CYAN}[${bar}]${NC} %s ${DIM}(%dm %02ds)${NC}  " "$description" $mins $secs
+        printf "\r        ${cursor_color}[${bar}]${NC} %s ${DIM}(%dm %02ds)${NC}  " "$description" $mins $secs
         sleep 0.033  # ~30fps for smoother animation
         ((frame++)) || true
     done
