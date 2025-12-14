@@ -777,9 +777,10 @@ do_install() {
     # Apply upstream patches to the clone (see UPSTREAM PATCHES section)
     # These will be removed once merged into pyMC_Repeater
     # -------------------------------------------------------------------------
-    print_info "Applying patches to clone..."
+print_info "Applying patches to clone..."
     patch_nextjs_static_serving "$CLONE_DIR"   # PATCH 1: Next.js static export support
     patch_api_endpoints "$CLONE_DIR"           # PATCH 2: Radio config API endpoint
+    patch_logging_section "$CLONE_DIR"         # PATCH 3: Ensure logging section exists
     
     # =========================================================================
     # Step 5: Copy files to install directory (mirrors upstream manage.sh)
@@ -1037,9 +1038,10 @@ do_upgrade() {
     # -------------------------------------------------------------------------
     # Apply upstream patches to the clone (see UPSTREAM PATCHES section)
     # -------------------------------------------------------------------------
-    print_info "Applying patches to clone..."
+print_info "Applying patches to clone..."
     patch_nextjs_static_serving "$CLONE_DIR"   # PATCH 1: Next.js static export support
     patch_api_endpoints "$CLONE_DIR"           # PATCH 2: Radio config API endpoint
+    patch_logging_section "$CLONE_DIR"         # PATCH 3: Ensure logging section exists
     
     # =========================================================================
     # Step 4: Copy updated files to install directory
@@ -1845,6 +1847,13 @@ do_uninstall() {
     pip uninstall -y pymc_core 2>/dev/null || true
     pip uninstall -y pymc-repeater 2>/dev/null || true
     pip uninstall -y pymc-core 2>/dev/null || true
+    # Also remove any leftover site-packages directories (pip uninstall may not fully clean up)
+    local site_packages
+    site_packages=$(python3 -c "import site; print(site.getsitepackages()[0])" 2>/dev/null || echo "/usr/local/lib/python3/dist-packages")
+    rm -rf "$site_packages/repeater" 2>/dev/null || true
+    rm -rf "$site_packages/pymc_core" 2>/dev/null || true
+    rm -rf "$site_packages/pymc_repeater"* 2>/dev/null || true
+    rm -rf "$site_packages/pymc_core"* 2>/dev/null || true
     echo "    ✓ Python packages removed"
     
     echo "[5/7] Removing installation directories..."
@@ -2013,6 +2022,11 @@ install_yq_silent() {
 # 2. patch_api_endpoints (api_endpoints.py)
 #    - Adds POST /api/update_radio_config endpoint
 #    - Allows web UI to update radio settings and save to config.yaml
+#    - PR Status: Pending
+#
+# 3. patch_logging_section (main.py)
+#    - Ensures config['logging'] exists before setting level from --log-level
+#    - Prevents KeyError when config.yaml lacks 'logging' section (affects DEBUG arg)
 #    - PR Status: Pending
 #
 # NOTE: GPIO patches (Fix A-D) were removed after discovery that the real issue
@@ -2304,6 +2318,72 @@ PATCHEOF
         print_success "Patched api_endpoints.py with update_radio_config"
     else
         print_warning "API patch may not have applied correctly"
+    fi
+}
+
+# ------------------------------------------------------------------------------
+# PATCH 3: Ensure logging section exists before setting level (main.py)
+# ------------------------------------------------------------------------------
+patch_logging_section() {
+    local target_dir="${1:-$CLONE_DIR}"
+    local main_file="$target_dir/repeater/main.py"
+
+    if [ ! -f "$main_file" ]; then
+        print_warning "main.py not found, skipping logging patch"
+        return 0
+    fi
+
+    # Only patch if the guard is missing
+    if grep -n "if args.log_level:" "$main_file" | grep -qv "logging\" not in config"; then
+        python3 << PATCHEOF
+import io, sys
+path = "$main_file"
+with open(path, 'r') as f:
+    s = f.read()
+old = """
+    if args.log_level:
+        config[\"logging\"][\"level\"] = args.log_level
+"""
+new = """
+    if args.log_level:
+        if \"logging\" not in config:
+            config[\"logging\"] = {}
+        config[\"logging\"][\"level\"] = args.log_level
+"""
+if old in s and new not in s:
+    s = s.replace(old, new)
+else:
+    # Try a more flexible replacement using lines
+    lines = s.splitlines(True)
+    out = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if line.strip().startswith("if args.log_level"):
+            out.append(line)
+            i += 1
+            if i < len(lines) and "config[\"logging\"][\"level\"]" in lines[i]:
+                indent = lines[i].split('c')[0]  # leading spaces
+                out.append(f"{indent}if \"logging\" not in config:\n")
+                out.append(f"{indent}    config[\"logging\"] = {{}}\n")
+                out.append(lines[i])
+                i += 1
+                continue
+        out.append(line)
+        i += 1
+    s = ''.join(out)
+with open(path, 'w') as f:
+    f.write(s)
+print("Patched logging section in main.py")
+PATCHEOF
+        # Verify
+        if grep -q 'if "logging" not in config' "$main_file"; then
+            print_success "Patched logging section in main.py"
+        else
+            print_warning "Logging patch may not have applied"
+        fi
+    else
+        print_info "Logging section already guarded"
     fi
 }
 
