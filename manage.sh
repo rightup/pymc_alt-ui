@@ -798,16 +798,11 @@ do_install() {
     # =========================================================================
     print_step 6 $total_steps "Finalizing installation"
     
-    # Restart service to pick up patches and dashboard
-    print_info "Restarting service with patches applied..."
-    systemctl restart "$BACKEND_SERVICE" 2>/dev/null || true
-    sleep 2
-    
-    if backend_running; then
-        print_success "Backend service running"
-    else
-        print_warning "Backend service may need configuration"
-    fi
+    # Stop service for now - we'll start it after user configures radio
+    # Upstream may have started it, so stop to avoid running with default config
+    systemctl stop "$BACKEND_SERVICE" 2>/dev/null || true
+    print_success "Installation files ready"
+    print_info "Service will start after radio configuration"
     
     # Clear error trap
     trap - ERR
@@ -822,14 +817,15 @@ do_install() {
     
     configure_radio_terminal
     
-    # Restart backend with new config
-    print_info "Applying configuration..."
-    systemctl restart "$BACKEND_SERVICE" 2>/dev/null || true
+    # NOW start the service with user's configuration
+    print_info "Starting service with your configuration..."
+    systemctl daemon-reload
+    systemctl start "$BACKEND_SERVICE" 2>/dev/null || true
     sleep 2
     if backend_running; then
-        print_success "Backend service running with new configuration"
+        print_success "Backend service running"
     else
-        print_warning "Backend may need GPIO configuration - use './manage.sh gpio'"
+        print_warning "Service may need GPIO configuration - use './manage.sh gpio'"
     fi
     
     # Show completion
@@ -2455,8 +2451,14 @@ patch_logging_section() {
         return 0
     fi
 
-    # Only patch if the guard is missing
-    if grep -n "if args.log_level:" "$main_file" | grep -qv "logging\" not in config"; then
+    # Check if already patched (upstream may have fixed this)
+    if grep -q 'if "logging" not in config' "$main_file" 2>/dev/null; then
+        print_info "Logging section already guarded (upstream fix)"
+        return 0
+    fi
+
+    # Only patch if the vulnerable pattern exists
+    if grep -q 'if args.log_level:' "$main_file" 2>/dev/null; then
         python3 << PATCHEOF
 import io, sys
 path = "$main_file"
@@ -2505,7 +2507,7 @@ PATCHEOF
             print_warning "Logging patch may not have applied"
         fi
     else
-        print_info "Logging section already guarded"
+        print_info "No log_level handling found - may be older version"
     fi
 }
 
