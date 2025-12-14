@@ -796,18 +796,20 @@ print_info "Applying patches to clone..."
     print_success "Files copied to $INSTALL_DIR"
     
     # =========================================================================
-    # Step 6: Install Python packages from clone directory
+    # Step 6: Install Python dependencies (not the repeater package itself)
     # =========================================================================
-    print_step 6 $total_steps "Installing pyMC_Repeater + pymc_core (via pip)"
+    print_step 6 $total_steps "Installing Python dependencies"
     
-    # Install from clone directory (same as upstream)
+    # Install from clone directory
     cd "$CLONE_DIR"
     
-    # Match upstream exactly: use system Python with all upstream flags
-    # This installs pymc_core[hardware] automatically as a dependency
-    run_npm_with_progress "Installing Python packages" "pip install --break-system-packages --force-reinstall --no-cache-dir --ignore-installed ." || {
-        print_error "Failed to install pyMC_Repeater package"
-        print_info "Branch '$branch' must exist in both pymc_core and pyMC_Repeater repos"
+    # Only install dependencies, NOT the repeater package itself.
+    # The service runs from /opt/pymc_repeater with PYTHONPATH set, so we don't need
+    # the repeater package in site-packages. We only need its dependencies (pymc_core, cherrypy, etc.)
+    # Using --no-deps with '.' would skip deps, so we install deps explicitly from pyproject.toml
+    run_npm_with_progress "Installing dependencies" "pip install --break-system-packages --force-reinstall --no-cache-dir 'pymc_core[hardware] @ git+https://github.com/rightup/pyMC_core.git@${branch}' cherrypy pyyaml" || {
+        print_error "Failed to install Python dependencies"
+        print_info "Branch '$branch' must exist in pymc_core repo"
         return 1
     }
     
@@ -1057,18 +1059,18 @@ print_info "Applying patches to clone..."
     print_success "Files updated"
     
     # =========================================================================
-    # Step 5: Update Python packages
+    # Step 5: Update Python dependencies (not the repeater package itself)
     # =========================================================================
-    print_step 5 $total_steps "Updating Python packages"
+    print_step 5 $total_steps "Updating Python dependencies"
     
-    # Install from clone directory (same as upstream)
+    # Install from clone directory
     cd "$CLONE_DIR"
     
-    # Match upstream exactly: use system Python with all upstream flags
-    # This installs/updates pymc_core[hardware] automatically as a dependency
-    run_npm_with_progress "Installing pyMC_Repeater + dependencies" "pip install --break-system-packages --force-reinstall --no-cache-dir --ignore-installed ." || {
-        print_error "Failed to install pyMC_Repeater"
-        print_info "Branch '$branch' must exist in both pymc_core and pyMC_Repeater repos"
+    # Only install dependencies, NOT the repeater package itself.
+    # The service runs from /opt/pymc_repeater with PYTHONPATH set.
+    run_npm_with_progress "Updating dependencies" "pip install --break-system-packages --force-reinstall --no-cache-dir 'pymc_core[hardware] @ git+https://github.com/rightup/pyMC_core.git@${branch}' cherrypy pyyaml" || {
+        print_error "Failed to install Python dependencies"
+        print_info "Branch '$branch' must exist in pymc_core repo"
         return 1
     }
     
