@@ -1889,79 +1889,30 @@ install_yq_silent() {
 # UPSTREAM INSTALLATION MANAGER
 # ============================================================================
 # This section handles running pyMC_Repeater's native manage.sh installer.
-# We wrap upstream's installer to provide a unified experience while ensuring
-# we stay compatible with upstream updates.
+# We run upstream's installer directly (user sees their native TUI), then
+# apply our patches and overlay our dashboard afterward.
 #
 # The approach:
 # 1. Clone/update pyMC_Repeater to a sibling directory
-# 2. Run upstream's manage.sh (install/upgrade/uninstall) non-interactively
+# 2. Run upstream's manage.sh (install/upgrade) in foreground - user sees TUI
 # 3. Apply our patches to the installed files (/opt/pymc_repeater)
-# 4. Overlay our dashboard and run our configuration
+# 4. Overlay our Next.js dashboard
+# 5. Run our radio configuration
 #
-# To bypass upstream's whiptail TUI, we create a fake dialog script that
-# auto-accepts all prompts. This gives users our unified installer experience.
-#
-# TODO: Work with upstream dev to add a --non-interactive flag to their
-# manage.sh, which would make this wrapper much cleaner.
+# Note: Upstream's radio config script is temporarily renamed during install
+# so we can run our own configuration flow instead.
 # ============================================================================
 
-# Create a fake dialog/whiptail script that auto-accepts everything
-# This allows upstream's manage.sh to run non-interactively
-create_fake_dialog() {
-    local fake_dialog="/tmp/pymc_fake_dialog"
-    
-    cat > "$fake_dialog" << 'FAKEDIALOG'
-#!/bin/bash
-# Fake whiptail/dialog that auto-accepts everything
-# Used by pymc_console to run upstream installer non-interactively
-
-# Parse arguments to determine dialog type
-while [[ $# -gt 0 ]]; do
-    case "$1" in
-        --yesno)
-            # Auto-accept yes/no dialogs
-            exit 0
-            ;;
-        --msgbox|--infobox)
-            # Silently acknowledge message boxes
-            exit 0
-            ;;
-        --gauge)
-            # Consume gauge input silently
-            cat > /dev/null
-            exit 0
-            ;;
-        --inputbox|--passwordbox)
-            # Return empty string for input boxes
-            echo ""
-            exit 0
-            ;;
-        --menu|--radiolist|--checklist)
-            # Return first option for menus
-            echo "1"
-            exit 0
-            ;;
-        *)
-            shift
-            ;;
-    esac
-done
-exit 0
-FAKEDIALOG
-    
-    chmod +x "$fake_dialog"
-    echo "$fake_dialog"
-}
-
-# Run upstream's manage.sh with a specific action, bypassing TUI
+# Run upstream's manage.sh with a specific action
 # Usage: run_upstream_installer <action> [branch]
 # Actions: install, upgrade
+#
+# Strategy: Let upstream run in foreground so user sees its native TUI.
+# We skip upstream's radio config and do our own after.
 run_upstream_installer() {
     local action="$1"
     local branch="${2:-$DEFAULT_BRANCH}"
-    local fake_dialog
     local upstream_script="$CLONE_DIR/manage.sh"
-    local log_file=$(mktemp)
     local exit_code=0
     
     # Verify clone exists
@@ -1969,9 +1920,6 @@ run_upstream_installer() {
         print_error "Upstream manage.sh not found at $upstream_script"
         return 1
     fi
-    
-    # Create fake dialog to bypass TUI
-    fake_dialog=$(create_fake_dialog)
     
     # Temporarily rename setup-radio-config.sh to skip upstream's radio config
     # We run our own config after installation
@@ -1982,61 +1930,34 @@ run_upstream_installer() {
         mv "$radio_config_script" "$radio_config_backup"
     fi
     
-    local start_time=$(date +%s)
-    local description="pyMC_Repeater $action"
+    echo ""
+    echo -e "        ${DIM}────────────────────────────────────────────────────────${NC}"
+    echo -e "        ${BOLD}Running pyMC_Repeater $action...${NC}"
+    echo -e "        ${DIM}You'll see the upstream installer's interface below.${NC}"
+    echo -e "        ${DIM}────────────────────────────────────────────────────────${NC}"
+    echo ""
     
-    # Run upstream's manage.sh with fake dialog in background
-    # Key workarounds for upstream's interactive requirements:
-    # 1. Use 'script' command to provide a pseudo-TTY (bypasses [ ! -t 0 ] check)
-    # 2. Pipe 'yes' to auto-answer any 'read' prompts
-    # 3. Set TERM to make whiptail happy
+    # Run upstream's manage.sh directly in foreground
+    # User sees the native TUI (whiptail dialogs, progress bars, etc.)
     (
         cd "$CLONE_DIR"
-        export DIALOG="$fake_dialog"
-        export DEBIAN_FRONTEND=noninteractive
-        export TERM=xterm
-        
-        # Use 'script' to provide pseudo-TTY, pipe endless newlines for any 'read' prompts
-        yes '' | script -q /dev/null -c "bash '$upstream_script' '$action'" > "$log_file" 2>&1
-    ) &
-    local pid=$!
-    
-    # Show spinner while command runs (simple, reliable)
-    local i=0
-    while kill -0 $pid 2>/dev/null; do
-        local elapsed=$(($(date +%s) - start_time))
-        local mins=$((elapsed / 60))
-        local secs=$((elapsed % 60))
-        printf "\r        ${CYAN}%s${NC} %s ${DIM}(%dm %02ds)${NC}  " "${SPINNER_CHARS:i++%${#SPINNER_CHARS}:1}" "$description" $mins $secs
-        sleep 0.1
-    done
-    
-    # Get exit status
-    wait $pid
+        bash "$upstream_script" "$action"
+    )
     exit_code=$?
-    local elapsed=$(($(date +%s) - start_time))
-    local mins=$((elapsed / 60))
-    local secs=$((elapsed % 60))
+    
+    echo ""
+    echo -e "        ${DIM}────────────────────────────────────────────────────────${NC}"
     
     # Restore radio config script if we backed it up
     if [ -n "$radio_config_backup" ] && [ -f "$radio_config_backup" ]; then
         mv "$radio_config_backup" "$radio_config_script"
     fi
     
-    # Clean up
-    rm -f "$fake_dialog"
-    
-    # Clear line and show result
-    printf "\r%-80s\r" " "
     if [ $exit_code -eq 0 ]; then
-        echo -e "        ${CHECK} $description completed ${DIM}(${mins}m ${secs}s)${NC}"
-        rm -f "$log_file"
+        echo -e "        ${CHECK} pyMC_Repeater $action completed"
         return 0
     else
-        echo -e "        ${CROSS} ${RED}$description failed${NC} ${DIM}(${mins}m ${secs}s)${NC}"
-        echo -e "        ${DIM}Log output:${NC}"
-        tail -30 "$log_file" | sed 's/^/        /'
-        rm -f "$log_file"
+        echo -e "        ${CROSS} ${RED}pyMC_Repeater $action failed${NC}"
         return 1
     fi
 }
