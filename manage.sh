@@ -624,21 +624,9 @@ do_install() {
     }
     
     # =========================================================================
-    # Step 5: Install pymc_core
+    # Step 5: Clone pyMC_Repeater
     # =========================================================================
-    print_step 5 $total_steps "Installing pymc_core@$branch"
-    
-    run_npm_with_progress "Downloading and installing pymc_core" "pip install 'pymc_core[hardware] @ git+https://github.com/rightup/pyMC_core.git@$branch'" || {
-        print_error "Failed to install pymc_core@$branch"
-        print_info "Branch '$branch' must exist in both pymc_core and pyMC_Repeater"
-        print_info "Try: sudo ./manage.sh install dev"
-        return 1
-    }
-    
-    # =========================================================================
-    # Step 6: Clone and install pyMC_Repeater
-    # =========================================================================
-    print_step 6 $total_steps "Installing pyMC_Repeater@$branch"
+    print_step 5 $total_steps "Cloning pyMC_Repeater@$branch"
     
     run_npm_with_progress "Cloning repository" "git clone -b '$branch' https://github.com/rightup/pyMC_Repeater.git '$REPEATER_DIR'" || {
         print_error "Failed to clone pyMC_Repeater"
@@ -651,9 +639,16 @@ do_install() {
     # Patch backend to support Next.js static file serving
     patch_nextjs_static_serving
     
-    # Use --no-deps since pymc_core was already installed in step 5
-    run_npm_with_progress "Installing Python package" "pip install -e . --no-deps" || {
+    # =========================================================================
+    # Step 6: Install pyMC_Repeater + dependencies (including pymc_core)
+    # =========================================================================
+    print_step 6 $total_steps "Installing pyMC_Repeater + pymc_core (via pip)"
+    
+    # Match upstream: let pip resolve ALL dependencies from pyproject.toml
+    # This installs pymc_core[hardware] automatically as a dependency
+    run_npm_with_progress "Installing Python packages" "pip install --force-reinstall --no-cache-dir ." || {
         print_error "Failed to install pyMC_Repeater package"
+        print_info "Branch '$branch' must exist in both pymc_core and pyMC_Repeater repos"
         return 1
     }
     
@@ -857,18 +852,14 @@ do_upgrade() {
     print_step 4 $total_steps "Updating Python packages"
     source "$INSTALL_DIR/venv/bin/activate"
     
-    run_npm_with_progress "Installing pymc_core@$branch" "pip install --upgrade 'pymc_core[hardware] @ git+https://github.com/rightup/pyMC_core.git@$branch'" || {
-        print_error "Failed to install pymc_core@$branch"
-        print_info "Branch '$branch' must exist in both pymc_core and pyMC_Repeater"
-        print_info "Try: sudo ./manage.sh upgrade dev"
-        return 1
-    }
-    
     # Patch backend to support Next.js static file serving
     patch_nextjs_static_serving
     
-    run_with_spinner "Installing pyMC_Repeater" "pip install -e . --no-deps" || {
+    # Match upstream: let pip resolve ALL dependencies from pyproject.toml
+    # This installs/updates pymc_core[hardware] automatically as a dependency
+    run_npm_with_progress "Installing pyMC_Repeater + dependencies" "pip install --force-reinstall --no-cache-dir ." || {
         print_error "Failed to install pyMC_Repeater"
+        print_info "Branch '$branch' must exist in both pymc_core and pyMC_Repeater repos"
         return 1
     }
     
@@ -1865,7 +1856,7 @@ PATCHEOF
 create_backend_service() {
     cat > /etc/systemd/system/pymc-repeater.service << EOF
 [Unit]
-Description=pyMC Repeater LoRa Mesh Network Service
+Description=pyMC Repeater Daemon
 After=network-online.target
 Wants=network-online.target
 
@@ -1874,10 +1865,27 @@ Type=simple
 User=$SERVICE_USER
 Group=$SERVICE_USER
 WorkingDirectory=$REPEATER_DIR
-ExecStart=$INSTALL_DIR/venv/bin/python -m repeater.main
+Environment="PYTHONPATH=$REPEATER_DIR"
+Environment="PYTHONUNBUFFERED=1"
+
+# Start command - use python module directly with proper path
+ExecStart=$INSTALL_DIR/venv/bin/python -m repeater.main --config $CONFIG_DIR/config.yaml
+
+# Restart on failure
 Restart=on-failure
 RestartSec=5
-Environment=PYTHONUNBUFFERED=1
+
+# Resource limits
+MemoryLimit=256M
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=pymc-repeater
+
+# Security (relaxed for proper operation)
+NoNewPrivileges=true
+ReadWritePaths=$LOG_DIR /var/lib/pymc_repeater $CONFIG_DIR
 
 [Install]
 WantedBy=multi-user.target
