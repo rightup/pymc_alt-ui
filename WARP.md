@@ -62,13 +62,31 @@ The dashboard is a **static export** (`output: 'export'` in next.config.ts). Aft
 3. pyMC_Repeater's CherryPy server serves the dashboard at port 8000
 4. No separate frontend server needed in production
 
-### Installation Paths (on target device)
+### Installation Flow (Mirrors Upstream)
 
-- `/opt/pymc_repeater/` - pyMC_Repeater (matches upstream standard path)
+The installer follows the same flow as upstream's `manage.sh`:
+1. User clones `pymc_console` to their preferred location (e.g., `~/pymc_console`)
+2. User runs `sudo ./manage.sh install`
+3. Script clones `pyMC_Repeater` as a sibling directory (e.g., `~/pyMC_Repeater`)
+4. Patches are applied to the clone
+5. Files are copied from clone to `/opt/pymc_repeater`
+6. Python packages installed from clone directory
+7. Dashboard overlaid to `/opt/pymc_repeater/repeater/web/html/`
+
+This mirrors upstream exactly, making patches easy to submit as PRs.
+
+### Directory Structure
+
+**Development/Clone directories (user's home):**
+- `~/pymc_console/` - This repo (cloned by user)
+- `~/pyMC_Repeater/` - Upstream repo (cloned by manage.sh as sibling)
+
+**Installation directories (on target device):**
+- `/opt/pymc_repeater/` - pyMC_Repeater installation (matches upstream)
 - `/opt/pymc_console/` - Our files (radio presets, etc.)
 - `/etc/pymc_repeater/config.yaml` - Radio and repeater configuration
 - `/var/log/pymc_repeater/` - Log files
-- Systemd service: `pymc-repeater.service` (upstream's file, with DEBUG workaround)
+- Systemd service: `pymc-repeater.service` (upstream's file)
 - Python packages installed system-wide (via `pip --break-system-packages --ignore-installed`)
 
 ### Frontend Structure (`frontend/src/`)
@@ -152,11 +170,13 @@ The main installer script provides a TUI (whiptail/dialog) for:
 
 ### Key Functions in manage.sh
 
-- `do_install()` - Clones pyMC_Repeater to `/opt/pymc_repeater`, installs via pip, overlays dashboard
-- `do_upgrade()` - Updates pyMC_Repeater and dashboard
-- `install_backend_service()` - Copies upstream's service file, adds DEBUG workaround
+- `do_install()` - Clones pyMC_Repeater to sibling dir, applies patches, copies to `/opt`, installs pip packages, overlays dashboard
+- `do_upgrade()` - Updates clone, re-applies patches, syncs to `/opt`, reinstalls packages
+- `install_backend_service()` - Copies upstream's service file from clone
 - `install_static_frontend()` - Copies built Next.js files to pyMC_Repeater's web directory
 - `configure_radio_terminal()` - Radio preset selection
+- `patch_nextjs_static_serving()` - Applies Next.js serving patch to target directory
+- `patch_api_endpoints()` - Applies radio config API patch to target directory
 
 ### Upstream Patches (PR Candidates)
 
@@ -167,7 +187,7 @@ These patches are applied during install and should be submitted as PRs to pyMC_
 
 ### Important: DEBUG Log Level Workaround
 
-The service file includes `--log-level DEBUG` to fix a timing bug in pymc_core where the asyncio event loop isn't ready when interrupt callbacks register. This particularly affects faster hardware (Pi 5). TODO: File upstream issue at github.com/rightup/pyMC_core.
+There's a timing bug in pymc_core where the asyncio event loop isn't ready when GPIO interrupt callbacks register. This particularly affects faster hardware (Pi 5). The DEBUG flag is currently **disabled for testing** - if RX doesn't work without DEBUG, re-enable it in `install_backend_service()`. TODO: File upstream issue at github.com/rightup/pyMC_core.
 
 ### Important: System Python (No Virtualenv)
 
