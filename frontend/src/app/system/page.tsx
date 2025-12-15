@@ -39,6 +39,39 @@ const ProgressBar = memo(function ProgressBar({ value, max = 100, color = 'prima
   );
 });
 
+/** Mini sparkline for load average (1m, 5m, 15m as horizontal bars) */
+const LoadSparkline = memo(function LoadSparkline({ 
+  load1, load5, load15, cpuCount 
+}: { 
+  load1: number; load5: number; load15: number; cpuCount: number;
+}) {
+  // Normalize to CPU count (load of cpuCount = 100%)
+  const max = Math.max(cpuCount * 1.5, load1, load5, load15);
+  const values = [load1, load5, load15];
+  const labels = ['1m', '5m', '15m'];
+  
+  return (
+    <div className="flex items-end gap-1 h-8">
+      {values.map((val, i) => {
+        const height = Math.max((val / max) * 100, 8);
+        const isHigh = val > cpuCount;
+        return (
+          <div key={labels[i]} className="flex-1 flex flex-col items-center gap-0.5">
+            <div 
+              className={clsx(
+                'w-full rounded-sm transition-all duration-300',
+                isHigh ? 'bg-accent-danger' : 'bg-accent-tertiary'
+              )}
+              style={{ height: `${height}%` }}
+            />
+            <span className="text-[8px] text-text-muted uppercase">{labels[i]}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+});
+
 /** Temperature thresholds in Celsius */
 const TEMP_THRESHOLDS = {
   cold: 30,
@@ -153,17 +186,17 @@ const TemperatureGauge = memo(function TemperatureGauge({
     <div className="space-y-1">
       {/* Label row with status pill and temp */}
       <div className="flex justify-between items-center">
-        <span className="text-xs text-text-muted">{label}</span>
+        <span className="text-xs text-text-muted uppercase tracking-wide">{label}</span>
         <div className="flex items-center gap-1.5">
-          {/* Status pill */}
+          {/* Status pill - sized to match text height */}
           <span className={clsx(
-            'px-1.5 py-0.5 text-[10px] font-medium rounded-full border',
+            'px-1.5 text-[9px] font-semibold rounded-full border leading-[14px]',
             status.bg, status.text_color, status.border
           )}>
             {status.text}
           </span>
-          {/* Temperature value */}
-          <span className={clsx('text-sm font-semibold tabular-nums', status.text_color)}>
+          {/* Temperature value - always white */}
+          <span className="text-sm font-semibold tabular-nums text-text-primary">
             {value.toFixed(1)}°
           </span>
         </div>
@@ -283,34 +316,30 @@ export default function SystemStatsPage() {
               <div className="w-12 h-12 rounded-lg bg-accent-tertiary/20 flex items-center justify-center">
                 <Cpu className="w-6 h-6 text-accent-tertiary" />
               </div>
-              <div>
+              <div className="flex-1">
                 <h2 className="text-lg font-medium text-text-primary">CPU Usage</h2>
-                <p className="text-sm text-text-muted">Processor utilization</p>
+                <p className="text-sm text-text-muted">{stats.cpu.count} cores</p>
               </div>
+              <span className="text-2xl font-semibold text-text-primary tabular-nums">
+                {stats.cpu.usage_percent.toFixed(0)}%
+              </span>
             </div>
             <div className="space-y-3">
-              <div className="flex justify-between text-sm">
-                <span className="text-text-muted">Usage</span>
-                <span className="text-text-primary font-medium">{stats.cpu.usage_percent.toFixed(1)}%</span>
-              </div>
               <ProgressBar value={stats.cpu.usage_percent} />
               {stats.cpu.load_avg && (
-                <div className="mt-4 pt-4 border-t border-border-subtle">
-                  <p className="text-sm text-text-muted mb-2">Load Average</p>
-                  <div className="grid grid-cols-3 gap-4 text-center">
-                    <div>
-                      <p className="text-lg font-medium text-text-primary">{stats.cpu.load_avg['1min'].toFixed(2)}</p>
-                      <p className="text-xs text-text-muted">1 min</p>
-                    </div>
-                    <div>
-                      <p className="text-lg font-medium text-text-primary">{stats.cpu.load_avg['5min'].toFixed(2)}</p>
-                      <p className="text-xs text-text-muted">5 min</p>
-                    </div>
-                    <div>
-                      <p className="text-lg font-medium text-text-primary">{stats.cpu.load_avg['15min'].toFixed(2)}</p>
-                      <p className="text-xs text-text-muted">15 min</p>
-                    </div>
+                <div className="mt-3 pt-3 border-t border-border-subtle">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs text-text-muted uppercase tracking-wide">Load Average</p>
+                    <p className="text-xs text-text-muted tabular-nums">
+                      {stats.cpu.load_avg['1min'].toFixed(2)} / {stats.cpu.load_avg['5min'].toFixed(2)} / {stats.cpu.load_avg['15min'].toFixed(2)}
+                    </p>
                   </div>
+                  <LoadSparkline 
+                    load1={stats.cpu.load_avg['1min']}
+                    load5={stats.cpu.load_avg['5min']}
+                    load15={stats.cpu.load_avg['15min']}
+                    cpuCount={stats.cpu.count}
+                  />
                 </div>
               )}
             </div>
