@@ -106,8 +106,8 @@ function TrafficStackedChartComponent({
   
   // Transform bucket data for composite chart
   // RX utilization is scaled to correlate with packet counts on left Y-axis
-  const { chartData, maxPackets } = useMemo(() => {
-    if (!received || received.length === 0) return { chartData: [], maxPackets: 0 };
+  const { chartData, maxPackets, maxRxUtil } = useMemo(() => {
+    if (!received || received.length === 0) return { chartData: [], maxPackets: 0, maxRxUtil: 0 };
 
     // Build a lookup map from utilization bins by timestamp
     // Backend sends 't' as bin start timestamp in milliseconds
@@ -202,7 +202,7 @@ function TrafficStackedChartComponent({
       rxUtilScaled: smoothedRx[i] * scaleFactor,
     }));
     
-    return { chartData: data, maxPackets: maxStackedPackets };
+    return { chartData: data, maxPackets: maxStackedPackets, maxRxUtil };
   }, [received, forwarded, dropped, transmitted, utilizationBins, txUtilization, rxUtilization]);
 
   if (chartData.length === 0) {
@@ -222,13 +222,10 @@ function TrafficStackedChartComponent({
       <div className="bg-bg-surface/95 backdrop-blur-sm border border-border-subtle rounded-lg px-3 py-2 text-sm">
         <div className="font-medium text-text-primary mb-1">{label}</div>
         {payload.map((entry, i) => {
-          // For RX Util, show the original percentage from payload data
-          const isRxUtil = entry.dataKey === 'rxUtilScaled';
-          const displayValue = isRxUtil 
-            ? `${entry.payload.rxUtil.toFixed(1)}%`
-            : entry.name.includes('Util') 
-              ? `${entry.value.toFixed(1)}%` 
-              : entry.value;
+          // Format utilization as percentage, packet counts as integers
+          const displayValue = entry.name.includes('Util') 
+            ? `${entry.value.toFixed(1)}%` 
+            : entry.value;
           
           return (
             <div key={i} className="flex items-center gap-2">
@@ -264,7 +261,7 @@ function TrafficStackedChartComponent({
             dy={8}
             interval="preserveStartEnd"
           />
-          {/* Left Y-axis for packet counts (RX util is scaled to this axis) */}
+          {/* Left Y-axis for packet counts */}
           <YAxis
             yAxisId="left"
             axisLine={false}
@@ -272,6 +269,18 @@ function TrafficStackedChartComponent({
             tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 11 }}
             dx={-8}
             width={32}
+          />
+          {/* Right Y-axis for RX utilization % - scaled to match the line position */}
+          <YAxis
+            yAxisId="right"
+            orientation="right"
+            axisLine={false}
+            tickLine={false}
+            tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10, fontFamily: 'var(--font-mono)' }}
+            dx={8}
+            width={40}
+            domain={[0, maxRxUtil > 0 ? maxRxUtil : 1]}
+            tickFormatter={(v) => `${v.toFixed(1)}%`}
           />
           <Tooltip content={<CustomTooltip />} />
           <Legend content={<TrafficLegend />} />
@@ -311,11 +320,11 @@ function TrafficStackedChartComponent({
             isAnimationActive={false}
           />
           
-          {/* RX Utilization line - scaled to left axis (correlates with packets) */}
+          {/* RX Utilization line - uses right axis (%) but visually correlates with packets */}
           <Line
-            yAxisId="left"
+            yAxisId="right"
             type="monotone"
-            dataKey="rxUtilScaled"
+            dataKey="rxUtil"
             name="RX Util"
             stroke={AIRTIME_RX_COLOR}
             strokeWidth={3}
