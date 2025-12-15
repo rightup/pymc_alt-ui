@@ -31,88 +31,6 @@ interface TrafficStackedChartProps {
 // Legend order: TX Util, RX Util, Received, Forwarded, Dropped
 const LEGEND_ORDER = ['TX Util', 'RX Util', 'Received', 'Forwarded', 'Dropped'];
 
-// Polynomial degree for trend fitting (higher = more flexible, lower = smoother)
-const POLY_DEGREE = 4;
-
-/** Fit a polynomial to data points and return smoothed values */
-function polynomialFit(data: number[], degree: number): number[] {
-  if (data.length === 0) return [];
-  if (data.length <= degree) return [...data]; // Not enough points
-  
-  const n = data.length;
-  const x = data.map((_, i) => i / (n - 1)); // Normalize x to [0, 1]
-  const y = data;
-  
-  // Build Vandermonde matrix for least squares: X * coeffs = y
-  // Using normal equations: (X^T * X) * coeffs = X^T * y
-  const cols = degree + 1;
-  
-  // X^T * X matrix
-  const XtX: number[][] = Array(cols).fill(0).map(() => Array(cols).fill(0));
-  // X^T * y vector
-  const Xty: number[] = Array(cols).fill(0);
-  
-  for (let i = 0; i < n; i++) {
-    for (let j = 0; j < cols; j++) {
-      const xij = Math.pow(x[i], j);
-      Xty[j] += xij * y[i];
-      for (let k = 0; k < cols; k++) {
-        XtX[j][k] += xij * Math.pow(x[i], k);
-      }
-    }
-  }
-  
-  // Solve using Gaussian elimination
-  const coeffs = solveLinearSystem(XtX, Xty);
-  if (!coeffs) return [...data]; // Fallback if solve fails
-  
-  // Evaluate polynomial at each point
-  return x.map(xi => {
-    let val = 0;
-    for (let j = 0; j < coeffs.length; j++) {
-      val += coeffs[j] * Math.pow(xi, j);
-    }
-    return Math.max(0, val); // Clamp to non-negative
-  });
-}
-
-/** Gaussian elimination to solve Ax = b */
-function solveLinearSystem(A: number[][], b: number[]): number[] | null {
-  const n = A.length;
-  const aug = A.map((row, i) => [...row, b[i]]); // Augmented matrix
-  
-  // Forward elimination
-  for (let i = 0; i < n; i++) {
-    // Find pivot
-    let maxRow = i;
-    for (let k = i + 1; k < n; k++) {
-      if (Math.abs(aug[k][i]) > Math.abs(aug[maxRow][i])) maxRow = k;
-    }
-    [aug[i], aug[maxRow]] = [aug[maxRow], aug[i]];
-    
-    if (Math.abs(aug[i][i]) < 1e-10) return null; // Singular
-    
-    for (let k = i + 1; k < n; k++) {
-      const factor = aug[k][i] / aug[i][i];
-      for (let j = i; j <= n; j++) {
-        aug[k][j] -= factor * aug[i][j];
-      }
-    }
-  }
-  
-  // Back substitution
-  const x = Array(n).fill(0);
-  for (let i = n - 1; i >= 0; i--) {
-    x[i] = aug[i][n];
-    for (let j = i + 1; j < n; j++) {
-      x[i] -= aug[i][j] * x[j];
-    }
-    x[i] /= aug[i][i];
-  }
-  
-  return x;
-}
-
 // Custom legend component - left justified with specific order
 function TrafficLegend({ payload }: { payload?: Array<{ value: string; color: string }> }) {
   if (!payload) return null;
@@ -207,8 +125,7 @@ function TrafficStackedChartComponent({
     const totalTransmitted = transmitted?.reduce((sum, b) => sum + b.count, 0) ?? 
                              forwarded.reduce((sum, b) => sum + b.count, 0);
 
-    // First pass: collect raw utilization values
-    const rawData = received.map((bucket, i) => {
+    return received.map((bucket, i) => {
       // 24-hour time format
       const time = new Date(bucket.start * 1000).toLocaleTimeString([], {
         hour: '2-digit',
@@ -240,19 +157,6 @@ function TrafficStackedChartComponent({
         rxUtil: util.rxUtil,
       };
     });
-    
-    // Apply polynomial fit smoothing to utilization values
-    const txUtilValues = rawData.map(d => d.txUtil);
-    const rxUtilValues = rawData.map(d => d.rxUtil);
-    const smoothedTx = polynomialFit(txUtilValues, POLY_DEGREE);
-    const smoothedRx = polynomialFit(rxUtilValues, POLY_DEGREE);
-    
-    // Return data with smoothed utilization
-    return rawData.map((d, i) => ({
-      ...d,
-      txUtil: smoothedTx[i],
-      rxUtil: smoothedRx[i],
-    }));
   }, [received, forwarded, dropped, transmitted, utilizationBins, txUtilization, rxUtilization]);
 
   if (chartData.length === 0) {
@@ -362,7 +266,7 @@ function TrafficStackedChartComponent({
             isAnimationActive={false}
           />
           
-          {/* Smooth lines for airtime utilization - polynomial fit already smooths, use linear to avoid overshoot */}
+          {/* Stepped lines for airtime utilization - rendered AFTER bars so they appear on top */}
           <Line
             yAxisId="right"
             type="monotone"
