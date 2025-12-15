@@ -162,14 +162,14 @@ export default function Dashboard() {
                   dataKey="time" 
                   axisLine={false}
                   tickLine={false}
-                  tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 11 }}
+                  tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10, fontFamily: "'JetBrains Mono', monospace" }}
                   dy={8}
                   interval="preserveStartEnd"
                 />
                 <YAxis 
                   axisLine={false}
                   tickLine={false}
-                  tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 11 }}
+                  tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10, fontFamily: "'JetBrains Mono', monospace" }}
                   dx={-8}
                   width={40}
                 />
