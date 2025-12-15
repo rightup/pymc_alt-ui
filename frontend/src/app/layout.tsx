@@ -28,13 +28,29 @@ export const metadata: Metadata = {
   description: "LoRa Mesh Network Repeater Monitoring Dashboard",
 };
 
+// Inline script to apply theme before React hydrates (prevents flash)
+const themeInitScript = `
+  (function() {
+    try {
+      var stored = localStorage.getItem('pymc-background');
+      var themeMap = { amber: 'amber', grey: 'grey', black: 'black', flora: 'flora' };
+      if (stored && themeMap[stored]) {
+        document.documentElement.setAttribute('data-theme', themeMap[stored]);
+      }
+    } catch (e) {}
+  })();
+`;
+
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en" className="dark" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+      </head>
       <body
         className={`${inter.variable} ${jetbrainsMono.variable} antialiased bg-bg-body min-h-screen`}
       >
