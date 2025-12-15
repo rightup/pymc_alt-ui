@@ -97,7 +97,7 @@ export function useChartColors(): ChartColors {
 
   useEffect(() => {
     const updateColors = () => {
-      setColors({
+      const newColors = {
         chart1: getCSSVar('--chart-1') || DEFAULT_CHART_COLORS.chart1,
         chart2: getCSSVar('--chart-2') || DEFAULT_CHART_COLORS.chart2,
         chart3: getCSSVar('--chart-3') || DEFAULT_CHART_COLORS.chart3,
@@ -106,7 +106,9 @@ export function useChartColors(): ChartColors {
         chart6: getCSSVar('--chart-6') || DEFAULT_CHART_COLORS.chart6,
         chart7: getCSSVar('--chart-7') || DEFAULT_CHART_COLORS.chart7,
         chart8: getCSSVar('--chart-8') || DEFAULT_CHART_COLORS.chart8,
-      });
+      };
+      console.log('[useChartColors] Theme:', document.documentElement.getAttribute('data-theme'), 'Colors:', newColors);
+      setColors(newColors);
     };
 
     // Initial read
