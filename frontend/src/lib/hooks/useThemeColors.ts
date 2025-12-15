@@ -107,7 +107,6 @@ export function useChartColors(): ChartColors {
         chart7: getCSSVar('--chart-7') || DEFAULT_CHART_COLORS.chart7,
         chart8: getCSSVar('--chart-8') || DEFAULT_CHART_COLORS.chart8,
       };
-      console.log('[useChartColors] Theme:', document.documentElement.getAttribute('data-theme'), 'Colors:', newColors);
       setColors(newColors);
     };
 

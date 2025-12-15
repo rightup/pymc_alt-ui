@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, memo, useMemo } from 'react';
+import { useState, memo, useMemo, useCallback } from 'react';
+import { Treemap, ResponsiveContainer } from 'recharts';
 import { getPacketTypeShortLabel } from '@/lib/constants';
 import { useChartColorArray } from '@/lib/hooks/useThemeColors';
 
@@ -13,20 +14,124 @@ interface PacketTypesChartProps {
   data: PacketTypeData[];
 }
 
+interface TreemapNodeProps {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  name: string;
+  value: number;
+  index: number;
+  colors: string[];
+  depth: number;
+  hoveredIndex: number | null;
+  onHover: (index: number | null) => void;
+  total: number;
+}
+
+/** Custom content renderer for treemap cells */
+function TreemapCell({
+  x,
+  y,
+  width,
+  height,
+  name,
+  value,
+  index,
+  colors,
+  depth,
+  hoveredIndex,
+  onHover,
+  total,
+}: TreemapNodeProps) {
+  // Only render leaf nodes (depth === 1)
+  if (depth !== 1) return null;
+  
+  const percent = ((value / total) * 100).toFixed(1);
+  const isHovered = hoveredIndex === index;
+  const isDimmed = hoveredIndex !== null && !isHovered;
+  const color = colors[index % colors.length];
+  
+  // Only show label if cell is large enough
+  const showLabel = width > 40 && height > 30;
+  const showPercent = width > 50 && height > 45;
+  
+  return (
+    <g
+      onMouseEnter={() => onHover(index)}
+      onMouseLeave={() => onHover(null)}
+      style={{ cursor: 'default' }}
+    >
+      <rect
+        x={x}
+        y={y}
+        width={width}
+        height={height}
+        fill={color}
+        opacity={isDimmed ? 0.4 : 1}
+        stroke="rgba(0,0,0,0.3)"
+        strokeWidth={1}
+        rx={4}
+        style={{ transition: 'opacity 150ms ease' }}
+      />
+      {showLabel && (
+        <text
+          x={x + width / 2}
+          y={y + height / 2 - (showPercent ? 6 : 0)}
+          textAnchor="middle"
+          dominantBaseline="middle"
+          fill="rgba(0,0,0,0.8)"
+          fontSize={11}
+          fontWeight={600}
+          fontFamily="var(--font-mono)"
+          style={{ textTransform: 'uppercase', pointerEvents: 'none' }}
+        >
+          {getPacketTypeShortLabel(name)}
+        </text>
+      )}
+      {showPercent && (
+        <text
+          x={x + width / 2}
+          y={y + height / 2 + 10}
+          textAnchor="middle"
+          dominantBaseline="middle"
+          fill="rgba(0,0,0,0.6)"
+          fontSize={10}
+          fontFamily="var(--font-mono)"
+          style={{ pointerEvents: 'none' }}
+        >
+          {percent}%
+        </text>
+      )}
+    </g>
+  );
+}
+
 /**
- * Stacked bar chart for packet type distribution
- * Features: hover-linked legend, full-height bar, harmonious color palette
+ * Treemap chart for packet type distribution
+ * Features: hover highlighting, color-coded cells, theme-aware colors
  */
 function PacketTypesChartComponent({ data }: PacketTypesChartProps) {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const chartColors = useChartColorArray();
 
-  const { filtered, total } = useMemo(() => {
+  const { treemapData, total } = useMemo(() => {
     const total = data.reduce((sum, e) => sum + e.value, 0);
     const sorted = [...data].sort((a, b) => b.value - a.value);
+    // Filter out very small values (<0.5%)
     const filtered = sorted.filter((e) => total > 0 && (e.value / total) * 100 >= 0.5);
-    return { filtered, total };
+    // Format for Recharts Treemap
+    const treemapData = filtered.map((item, index) => ({
+      name: item.name,
+      size: item.value,
+      index,
+    }));
+    return { treemapData, total };
   }, [data]);
+
+  const handleHover = useCallback((index: number | null) => {
+    setHoveredIndex(index);
+  }, []);
 
   if (data.length === 0 || total === 0) {
     return (
@@ -37,54 +142,32 @@ function PacketTypesChartComponent({ data }: PacketTypesChartProps) {
   }
 
   return (
-    <div className="h-56 flex items-stretch gap-4">
-      {/* Stacked bar - full height, maximized width */}
-      <div className="flex-1 rounded-lg overflow-hidden flex">
-        {filtered.map((entry, i) => {
-          const percent = (entry.value / total) * 100;
-          return (
-            <div
-              key={entry.name}
-              className="h-full transition-opacity duration-150 cursor-default"
-              style={{
-                width: `${percent}%`,
-                backgroundColor: chartColors[i % chartColors.length],
-                opacity: hoveredIndex === null || hoveredIndex === i ? 1 : 0.4,
-              }}
-              onMouseEnter={() => setHoveredIndex(i)}
-              onMouseLeave={() => setHoveredIndex(null)}
+    <div className="h-56">
+      <ResponsiveContainer width="100%" height="100%">
+        <Treemap
+          data={treemapData}
+          dataKey="size"
+          aspectRatio={4 / 3}
+          stroke="none"
+          isAnimationActive={false}
+          content={(
+            <TreemapCell
+              x={0}
+              y={0}
+              width={0}
+              height={0}
+              name=""
+              value={0}
+              index={0}
+              colors={chartColors}
+              depth={0}
+              hoveredIndex={hoveredIndex}
+              onHover={handleHover}
+              total={total}
             />
-          );
-        })}
-      </div>
-
-      {/* Legend - compact, fixed width to prevent jitter */}
-      <div className="flex flex-col justify-center gap-1 flex-shrink-0 w-24">
-        {filtered.map((entry, i) => {
-          const isHighlighted = hoveredIndex === i;
-          return (
-            <div
-              key={entry.name}
-              className="flex items-center gap-2 transition-opacity duration-150 cursor-default"
-              style={{ opacity: hoveredIndex === null || isHighlighted ? 1 : 0.4 }}
-              onMouseEnter={() => setHoveredIndex(i)}
-              onMouseLeave={() => setHoveredIndex(null)}
-            >
-              <span
-                className="w-2 h-2 rounded-sm flex-shrink-0"
-                style={{ backgroundColor: chartColors[i % chartColors.length] }}
-              />
-              <span
-                className={`type-data-xs uppercase transition-colors duration-150 ${
-                  isHighlighted ? 'text-white' : 'text-white/60'
-                }`}
-              >
-                {getPacketTypeShortLabel(entry.name)}
-              </span>
-            </div>
-          );
-        })}
-      </div>
+          )}
+        />
+      </ResponsiveContainer>
     </div>
   );
 }
