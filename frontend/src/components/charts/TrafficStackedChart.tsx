@@ -269,7 +269,7 @@ function TrafficStackedChartComponent({
           {/* Stepped lines for airtime utilization - rendered AFTER bars so they appear on top */}
           <Line
             yAxisId="right"
-type="linear"
+            type="monotone"
             dataKey="txUtil"
             name="TX Util"
             stroke={AIRTIME_TX_COLOR}
@@ -279,7 +279,7 @@ type="linear"
           />
           <Line
             yAxisId="right"
-            type="linear"
+            type="monotone"
             dataKey="rxUtil"
             name="RX Util"
             stroke={AIRTIME_RX_COLOR}
