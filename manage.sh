@@ -766,12 +766,6 @@ do_install() {
     patch_logging_section "$INSTALL_DIR"         # PATCH 3: Ensure logging section exists
     patch_log_level_api "$INSTALL_DIR"           # PATCH 4: Log level toggle API
     
-    # Set DEBUG logging as default
-    if [ -f "$CONFIG_DIR/config.yaml" ]; then
-        yq -i '.logging.level = "DEBUG"' "$CONFIG_DIR/config.yaml" 2>/dev/null || true
-        print_success "Set log level to DEBUG"
-    fi
-    
     # =========================================================================
     # Step 5: Install dashboard and console extras
     # =========================================================================
@@ -991,10 +985,14 @@ do_upgrade() {
     patch_logging_section "$INSTALL_DIR"         # PATCH 3: Ensure logging section exists
     patch_log_level_api "$INSTALL_DIR"           # PATCH 4: Log level toggle API
     
-    # Set DEBUG logging as default
-    if [ -f "$CONFIG_DIR/config.yaml" ]; then
-        yq -i '.logging.level = "DEBUG"' "$CONFIG_DIR/config.yaml" 2>/dev/null || true
-        print_success "Set log level to DEBUG"
+    # Ensure --log-level DEBUG is in service file (RX timing fix)
+    if [ -f /etc/systemd/system/pymc-repeater.service ]; then
+        if ! grep -q '\-\-log-level DEBUG' /etc/systemd/system/pymc-repeater.service; then
+            sed -i 's|--config /etc/pymc_repeater/config.yaml$|--config /etc/pymc_repeater/config.yaml --log-level DEBUG|' \
+                /etc/systemd/system/pymc-repeater.service
+            systemctl daemon-reload
+            print_success "Added --log-level DEBUG for RX timing fix"
+        fi
     fi
     
     # Update our Next.js dashboard (overlays upstream's frontend)
@@ -2503,16 +2501,15 @@ install_backend_service() {
     if [ -f "$service_file" ]; then
         cp "$service_file" /etc/systemd/system/pymc-repeater.service
         
-        # WORKAROUND (DISABLED FOR TESTING): Add --log-level DEBUG to fix pymc_core timing bug on Pi 5
+        # WORKAROUND: Add --log-level DEBUG to fix pymc_core timing bug on Pi 5
         # Issue: asyncio event loop not ready when interrupt callbacks register
-        # This slows down initialization enough for the event loop to start
+        # The DEBUG flag slows down initialization enough for the event loop to start
         # TODO: File upstream issue at github.com/rightup/pyMC_core
-        # Uncomment below if RX still doesn't work without DEBUG:
-        # sed -i 's|--config /etc/pymc_repeater/config.yaml$|--config /etc/pymc_repeater/config.yaml --log-level DEBUG|' \
-        #     /etc/systemd/system/pymc-repeater.service
+        sed -i 's|--config /etc/pymc_repeater/config.yaml$|--config /etc/pymc_repeater/config.yaml --log-level DEBUG|' \
+            /etc/systemd/system/pymc-repeater.service
         
         print_success "Installed upstream service file"
-        # print_info "Added --log-level DEBUG workaround for Pi 5 timing bug"
+        print_info "Added --log-level DEBUG for RX timing fix"
     else
         print_error "Service file not found in pyMC_Repeater repo"
         return 1
