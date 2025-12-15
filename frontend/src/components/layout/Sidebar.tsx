@@ -38,12 +38,29 @@ const navigation = [
   { name: 'Settings', href: '/settings/', icon: Settings },
 ];
 
+const CONTROLS_EXPANDED_KEY = 'pymc-controls-expanded';
+
 export function Sidebar() {
   const pathname = usePathname();
   const { stats, fetchStats, setMode, setDutyCycle, sendAdvert } = useStore();
   const [isOpen, setIsOpen] = useState(false);
   const [controlsExpanded, setControlsExpanded] = useState(true);
   const [sending, setSending] = useState(false);
+
+  // Load controls expanded state from localStorage on mount
+  useEffect(() => {
+    const stored = localStorage.getItem(CONTROLS_EXPANDED_KEY);
+    if (stored !== null) {
+      setControlsExpanded(stored === 'true');
+    }
+  }, []);
+
+  // Persist controls expanded state
+  const handleControlsToggle = () => {
+    const newState = !controlsExpanded;
+    setControlsExpanded(newState);
+    localStorage.setItem(CONTROLS_EXPANDED_KEY, String(newState));
+  };
 
   usePolling(fetchStats, POLLING_INTERVALS.stats);
 
@@ -112,7 +129,7 @@ export function Sidebar() {
     <div className="px-3 py-3">
       {/* Panel Header - collapsible */}
       <button
-        onClick={() => setControlsExpanded(!controlsExpanded)}
+        onClick={handleControlsToggle}
         className="w-full flex items-center justify-between px-2 py-1.5 mb-2 rounded-lg hover:bg-white/5 transition-colors"
       >
         <div className="flex items-center gap-2">
