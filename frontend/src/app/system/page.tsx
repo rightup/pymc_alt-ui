@@ -73,34 +73,25 @@ const TemperatureGauge = memo(function TemperatureGauge({
   
   const status = getStatus();
   
-  // Get the color at the current temperature position
-  // Maps temperature to gradient: cold (cyan) → normal (green) → warm (yellow) → hot (orange) → danger (red)
+  // Get the color for the current temperature
   const getTemperatureColor = () => {
-    if (value < TEMP_THRESHOLDS.cold) return 'var(--accent-tertiary)';
-    if (value < TEMP_THRESHOLDS.normal) return 'var(--accent-success)';
-    if (value < TEMP_THRESHOLDS.warm) return 'var(--accent-secondary)';
-    if (value < TEMP_THRESHOLDS.hot) return '#f97316';
-    return 'var(--accent-danger)';
+    if (value < TEMP_THRESHOLDS.cold) return 'var(--accent-tertiary)';  // Cyan - cool
+    if (value < TEMP_THRESHOLDS.normal) return 'var(--accent-success)'; // Green - normal
+    if (value < TEMP_THRESHOLDS.warm) return 'var(--accent-secondary)'; // Yellow - warm
+    if (value < TEMP_THRESHOLDS.hot) return '#f97316';                  // Orange - hot
+    return 'var(--accent-danger)';                                      // Red - danger
   };
 
-  // Build gradient that reveals colors up to current temperature
-  // The gradient spans the FULL bar width, but only shows colors up to current temp
-  const getRevealGradient = () => {
-    const range = max - min;
-    const coldPos = ((TEMP_THRESHOLDS.cold - min) / range) * 100;
-    const normalPos = ((TEMP_THRESHOLDS.normal - min) / range) * 100;
-    const warmPos = ((TEMP_THRESHOLDS.warm - min) / range) * 100;
-    const hotPos = ((TEMP_THRESHOLDS.hot - min) / range) * 100;
-    
-    return `linear-gradient(to right,
-      var(--accent-tertiary) 0%,
-      var(--accent-tertiary) ${coldPos}%,
-      var(--accent-success) ${normalPos}%,
-      var(--accent-secondary) ${warmPos}%,
-      #f97316 ${hotPos}%,
-      var(--accent-danger) 100%
-    )`;
-  };
+  const barColor = getTemperatureColor();
+  
+  // Background gradient showing the full scale (dimmed)
+  const scaleGradient = `linear-gradient(to right,
+    var(--accent-tertiary) 0%,
+    var(--accent-success) 37%,
+    var(--accent-secondary) 56%,
+    #f97316 75%,
+    var(--accent-danger) 100%
+  )`;
 
   return (
     <div className="space-y-2">
@@ -114,17 +105,17 @@ const TemperatureGauge = memo(function TemperatureGauge({
       
       {/* Grafana-style bar gauge */}
       <div className="relative h-4 bg-white/5 rounded-full overflow-hidden">
-        {/* Full gradient background (dimmed) - shows where temp COULD go */}
+        {/* Full gradient background (dimmed) - shows the scale */}
         <div 
-          className="absolute inset-0 opacity-15 rounded-full"
-          style={{ background: getRevealGradient() }}
+          className="absolute inset-0 opacity-20 rounded-full"
+          style={{ background: scaleGradient }}
         />
         
-        {/* Active portion - gradient reveals colors up to current temp */}
+        {/* Active portion - solid color matching current temp zone */}
         <div 
           className="absolute inset-y-0 left-0 rounded-full transition-all duration-300 ease-out"
           style={{ 
-            background: getRevealGradient(),
+            background: barColor,
             width: `${percentage}%`,
           }}
         />
@@ -137,7 +128,7 @@ const TemperatureGauge = memo(function TemperatureGauge({
             return (
               <div
                 key={threshold}
-                className="absolute w-px h-2 bg-white/20"
+                className="absolute w-px h-2 bg-white/30"
                 style={{ left: `${pos}%` }}
               />
             );
