@@ -32,7 +32,7 @@ interface TrafficStackedChartProps {
 const LEGEND_ORDER = ['TX Util', 'RX Util', 'Received', 'Forwarded', 'Dropped'];
 
 // Rolling average window size (number of data points to average)
-const ROLLING_AVG_WINDOW = 3;
+const ROLLING_AVG_WINDOW = 20;
 
 /** Apply rolling average smoothing to an array of numbers */
 function rollingAverage(data: number[], windowSize: number): number[] {
