@@ -32,28 +32,36 @@ function copyToClipboard(text: string): boolean {
     return true;
   }
   
-  // Fallback: create temporary input element (more compatible than textarea)
+  // Fallback: create temporary textarea (works better cross-browser)
   try {
-    const input = document.createElement('input');
-    input.setAttribute('type', 'text');
-    input.setAttribute('value', text);
-    input.style.position = 'fixed';
-    input.style.left = '0';
-    input.style.top = '0';
-    input.style.opacity = '0';
-    input.style.pointerEvents = 'none';
-    document.body.appendChild(input);
+    // Save current scroll position
+    const scrollX = window.scrollX;
+    const scrollY = window.scrollY;
+    
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    // Prevent scrolling by positioning off-screen
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    textarea.style.top = '-9999px';
+    textarea.style.opacity = '0';
+    textarea.style.pointerEvents = 'none';
+    textarea.setAttribute('readonly', ''); // Prevent keyboard on mobile
+    document.body.appendChild(textarea);
     
     // Focus and select
-    input.focus();
-    input.select();
-    input.setSelectionRange(0, text.length);
+    textarea.focus({ preventScroll: true });
+    textarea.select();
+    textarea.setSelectionRange(0, text.length);
     
     // Execute copy
     const success = document.execCommand('copy');
     
     // Clean up
-    document.body.removeChild(input);
+    document.body.removeChild(textarea);
+    
+    // Restore scroll position (belt and suspenders)
+    window.scrollTo(scrollX, scrollY);
     
     return success;
   } catch (err) {
