@@ -84,15 +84,15 @@
   --route-direct: #F9D26F;       /* Direct route - amber */
   --route-transport: #B49DFF;    /* Transport route - lavender */
   
-  /* Chart Colors - Duotone palette (lavender/blue for default theme) */
-  --chart-1: #B49DFF;            /* Lavender - primary */
-  --chart-2: #8B7ACC;            /* Lavender dark */
-  --chart-3: #60A5FA;            /* Blue */
-  --chart-4: #3B82F6;            /* Blue vivid */
-  --chart-5: #93C5FD;            /* Blue light */
-  --chart-6: #7C6FD1;            /* Lavender mid */
-  --chart-7: #A5B4FC;            /* Indigo light */
-  --chart-8: #6366F1;            /* Indigo */
+  /* Chart Colors - Blue theme: Sapphire to Lavender (cool analogous) */
+  --chart-1: #818CF8;            /* Indigo 400 - anchor */
+  --chart-2: #A78BFA;            /* Violet 400 */
+  --chart-3: #6366F1;            /* Indigo 500 */
+  --chart-4: #C4B5FD;            /* Violet 300 - highlight */
+  --chart-5: #4F46E5;            /* Indigo 600 - shadow */
+  --chart-6: #8B5CF6;            /* Violet 500 */
+  --chart-7: #DDD6FE;            /* Violet 200 - light accent */
+  --chart-8: #7C3AED;            /* Violet 600 */
   
   /* Metric Card Colors - Dashboard stats */
   --metric-received: #39D98A;    /* Packets received - green */
@@ -231,15 +231,15 @@ html {
   --accent-success: #7DCE82;      /* Soft green */
   --shadow-tint: rgba(255, 179, 71, 0.35);
   
-  /* Chart palette - warm amber duotone */
-  --chart-1: #FFB347;             /* Amber primary */
-  --chart-2: #E69A2E;             /* Amber dark */
-  --chart-3: #FFD700;             /* Gold */
-  --chart-4: #F59E0B;             /* Amber vivid */
-  --chart-5: #FCD34D;             /* Yellow light */
-  --chart-6: #D97706;             /* Amber deep */
-  --chart-7: #FBBF24;             /* Yellow */
-  --chart-8: #B45309;             /* Brown */
+  /* Chart palette - Amber theme: Copper to Gold (warm analogous) */
+  --chart-1: #F59E0B;            /* Amber 500 - anchor */
+  --chart-2: #FBBF24;            /* Amber 400 */
+  --chart-3: #D97706;            /* Amber 600 - shadow */
+  --chart-4: #FCD34D;            /* Amber 300 - highlight */
+  --chart-5: #B45309;            /* Amber 700 */
+  --chart-6: #F97316;            /* Orange 500 - warmth */
+  --chart-7: #FDE68A;            /* Amber 200 - light accent */
+  --chart-8: #EA580C;            /* Orange 600 */
   
   /* Packet type colors - amber palette */
   --pkt-advert: #FFD700;
@@ -269,15 +269,15 @@ html {
   --accent-success: #68D391;      /* Soft green */
   --shadow-tint: rgba(139, 157, 195, 0.35);
   
-  /* Chart palette - cool grey/slate duotone */
-  --chart-1: #8B9DC3;             /* Slate blue primary */
-  --chart-2: #6B7C9C;             /* Slate dark */
-  --chart-3: #A0AEC0;             /* Cool grey */
-  --chart-4: #64748B;             /* Slate 500 */
-  --chart-5: #94A3B8;             /* Slate 400 */
-  --chart-6: #475569;             /* Slate 600 */
-  --chart-7: #CBD5E1;             /* Slate 300 */
-  --chart-8: #334155;             /* Slate 700 */
+  /* Chart palette - Steel theme: Slate monochromatic with blue undertone */
+  --chart-1: #94A3B8;            /* Slate 400 - anchor */
+  --chart-2: #64748B;            /* Slate 500 */
+  --chart-3: #CBD5E1;            /* Slate 300 - highlight */
+  --chart-4: #475569;            /* Slate 600 - shadow */
+  --chart-5: #E2E8F0;            /* Slate 200 - light */
+  --chart-6: #334155;            /* Slate 700 */
+  --chart-7: #F1F5F9;            /* Slate 100 - lightest */
+  --chart-8: #1E293B;            /* Slate 800 - darkest */
   
   /* Packet type colors - grey palette */
   --pkt-advert: #F6AD55;
@@ -314,15 +314,15 @@ html {
   --border-subtle: rgba(255, 255, 255, 0.1);
   --border-strong: rgba(255, 255, 255, 0.15);
   
-  /* Chart palette - cyan/white duotone */
-  --chart-1: #00D4FF;             /* Electric cyan primary */
-  --chart-2: #00A3CC;             /* Cyan dark */
-  --chart-3: #FFFFFF;             /* White */
-  --chart-4: #E0E0E0;             /* Grey light */
-  --chart-5: #67E8F9;             /* Cyan light */
-  --chart-6: #0891B2;             /* Cyan 600 */
-  --chart-7: #A5F3FC;             /* Cyan 200 */
-  --chart-8: #06B6D4;             /* Cyan 500 */
+  /* Chart palette - Space theme: Teal to white (high contrast, minimal) */
+  --chart-1: #2DD4BF;            /* Teal 400 - anchor */
+  --chart-2: #F0FDFA;            /* Teal 50 - near white */
+  --chart-3: #14B8A6;            /* Teal 500 */
+  --chart-4: #CCFBF1;            /* Teal 100 - highlight */
+  --chart-5: #0D9488;            /* Teal 600 - shadow */
+  --chart-6: #5EEAD4;            /* Teal 300 */
+  --chart-7: #FFFFFF;            /* Pure white */
+  --chart-8: #0F766E;            /* Teal 700 */
   
   /* Packet type colors - neon palette */
   --pkt-advert: #FFFF00;
@@ -352,15 +352,15 @@ html {
   --accent-success: #6BCB77;      /* Forest green */
   --shadow-tint: rgba(125, 211, 168, 0.35);
   
-  /* Chart palette - green/sage duotone */
-  --chart-1: #7DD3A8;             /* Sage green primary */
-  --chart-2: #5CB885;             /* Sage dark */
-  --chart-3: #A8E6CF;             /* Mint green */
-  --chart-4: #34D399;             /* Emerald 400 */
-  --chart-5: #6EE7B7;             /* Emerald 300 */
-  --chart-6: #10B981;             /* Emerald 500 */
-  --chart-7: #A7F3D0;             /* Emerald 200 */
-  --chart-8: #059669;             /* Emerald 600 */
+  /* Chart palette - Iridescence theme: Rose to sage (split complementary) */
+  --chart-1: #86EFAC;            /* Green 300 - anchor */
+  --chart-2: #FDA4AF;            /* Rose 300 - complement accent */
+  --chart-3: #4ADE80;            /* Green 400 */
+  --chart-4: #BBF7D0;            /* Green 200 - highlight */
+  --chart-5: #22C55E;            /* Green 500 - shadow */
+  --chart-6: #FB7185;            /* Rose 400 - complement */
+  --chart-7: #DCFCE7;            /* Green 100 - lightest */
+  --chart-8: #F43F5E;            /* Rose 500 */
   
   /* Packet type colors - nature palette */
   --pkt-advert: #F2CC8F;
