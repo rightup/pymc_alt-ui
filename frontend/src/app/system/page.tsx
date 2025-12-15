@@ -73,23 +73,54 @@ const TemperatureGauge = memo(function TemperatureGauge({
   
   const status = getStatus();
   
-  // Get the color for the current temperature
-  const getTemperatureColor = () => {
-    if (value < TEMP_THRESHOLDS.cold) return 'var(--accent-tertiary)';  // Cyan - cool
-    if (value < TEMP_THRESHOLDS.normal) return 'var(--accent-success)'; // Green - normal
-    if (value < TEMP_THRESHOLDS.warm) return 'var(--accent-secondary)'; // Yellow - warm
-    if (value < TEMP_THRESHOLDS.hot) return '#f97316';                  // Orange - hot
-    return 'var(--accent-danger)';                                      // Red - danger
+  // Calculate threshold positions as percentages
+  const range = max - min;
+  const thresholdPositions = {
+    cold: ((TEMP_THRESHOLDS.cold - min) / range) * 100,
+    normal: ((TEMP_THRESHOLDS.normal - min) / range) * 100,
+    warm: ((TEMP_THRESHOLDS.warm - min) / range) * 100,
+    hot: ((TEMP_THRESHOLDS.hot - min) / range) * 100,
   };
 
-  const barColor = getTemperatureColor();
-  
-  // Background gradient showing the full scale (dimmed)
+  // Build gradient that shows colors ONLY up to current temperature
+  // This creates the "reveal" effect - you only see colors you've reached
+  const getBarGradient = () => {
+    // Color stops at threshold positions (as % of full scale)
+    const stops = [
+      { pos: 0, color: 'var(--accent-tertiary)' },
+      { pos: thresholdPositions.cold, color: 'var(--accent-tertiary)' },
+      { pos: thresholdPositions.cold, color: 'var(--accent-success)' },
+      { pos: thresholdPositions.normal, color: 'var(--accent-success)' },
+      { pos: thresholdPositions.normal, color: 'var(--accent-secondary)' },
+      { pos: thresholdPositions.warm, color: 'var(--accent-secondary)' },
+      { pos: thresholdPositions.warm, color: '#f97316' },
+      { pos: thresholdPositions.hot, color: '#f97316' },
+      { pos: thresholdPositions.hot, color: 'var(--accent-danger)' },
+      { pos: 100, color: 'var(--accent-danger)' },
+    ];
+    
+    // Convert to gradient string - positions are relative to BAR width, not container
+    // So we scale them: if bar is at 50%, a stop at 60% of scale becomes 120% of bar (not visible)
+    const scaledStops = stops.map(s => {
+      // Scale position relative to current bar width
+      const scaledPos = percentage > 0 ? (s.pos / percentage) * 100 : 0;
+      return `${s.color} ${Math.min(scaledPos, 100)}%`;
+    });
+    
+    return `linear-gradient(to right, ${scaledStops.join(', ')})`;
+  };
+
+  // Dimmed background showing full scale
   const scaleGradient = `linear-gradient(to right,
     var(--accent-tertiary) 0%,
-    var(--accent-success) 37%,
-    var(--accent-secondary) 56%,
-    #f97316 75%,
+    var(--accent-tertiary) ${thresholdPositions.cold}%,
+    var(--accent-success) ${thresholdPositions.cold}%,
+    var(--accent-success) ${thresholdPositions.normal}%,
+    var(--accent-secondary) ${thresholdPositions.normal}%,
+    var(--accent-secondary) ${thresholdPositions.warm}%,
+    #f97316 ${thresholdPositions.warm}%,
+    #f97316 ${thresholdPositions.hot}%,
+    var(--accent-danger) ${thresholdPositions.hot}%,
     var(--accent-danger) 100%
   )`;
 
@@ -103,24 +134,24 @@ const TemperatureGauge = memo(function TemperatureGauge({
         </div>
       </div>
       
-      {/* Grafana-style bar gauge */}
+      {/* Grafana-style bar gauge - Gradient mode */}
       <div className="relative h-4 bg-white/5 rounded-full overflow-hidden">
-        {/* Full gradient background (dimmed) - shows the scale */}
+        {/* Full gradient background (dimmed) - shows the full scale */}
         <div 
-          className="absolute inset-0 opacity-20 rounded-full"
+          className="absolute inset-0 opacity-15 rounded-full"
           style={{ background: scaleGradient }}
         />
         
-        {/* Active portion - solid color matching current temp zone */}
+        {/* Active bar - gradient reveals colors as temp increases */}
         <div 
           className="absolute inset-y-0 left-0 rounded-full transition-all duration-300 ease-out"
           style={{ 
-            background: barColor,
+            background: getBarGradient(),
             width: `${percentage}%`,
           }}
         />
         
-        {/* Tick marks for thresholds */}
+        {/* Tick marks at thresholds */}
         <div className="absolute inset-0 flex items-center pointer-events-none">
           {[TEMP_THRESHOLDS.normal, TEMP_THRESHOLDS.warm, TEMP_THRESHOLDS.hot].map((threshold) => {
             const pos = ((threshold - min) / (max - min)) * 100;
@@ -128,7 +159,7 @@ const TemperatureGauge = memo(function TemperatureGauge({
             return (
               <div
                 key={threshold}
-                className="absolute w-px h-2 bg-white/30"
+                className="absolute w-px h-2 bg-white/25"
                 style={{ left: `${pos}%` }}
               />
             );
