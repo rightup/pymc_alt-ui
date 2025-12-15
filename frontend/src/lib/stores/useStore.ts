@@ -10,6 +10,49 @@ export interface ResourceDataPoint {
   memory: number;
 }
 
+// localStorage key for resource history persistence
+const RESOURCE_HISTORY_KEY = 'pymc-resource-history';
+const RESOURCE_LAST_FETCH_KEY = 'pymc-resource-last-fetch';
+
+/** Load resource history from localStorage */
+function loadResourceHistory(): ResourceDataPoint[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const stored = localStorage.getItem(RESOURCE_HISTORY_KEY);
+    if (stored) {
+      return JSON.parse(stored) as ResourceDataPoint[];
+    }
+  } catch (e) {
+    console.warn('Failed to load resource history from localStorage:', e);
+  }
+  return [];
+}
+
+/** Load last fetch timestamp from localStorage */
+function loadLastResourceFetch(): number {
+  if (typeof window === 'undefined') return 0;
+  try {
+    const stored = localStorage.getItem(RESOURCE_LAST_FETCH_KEY);
+    if (stored) {
+      return parseInt(stored, 10) || 0;
+    }
+  } catch (e) {
+    // Ignore
+  }
+  return 0;
+}
+
+/** Save resource history to localStorage */
+function saveResourceHistory(history: ResourceDataPoint[], lastFetch: number): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(RESOURCE_HISTORY_KEY, JSON.stringify(history));
+    localStorage.setItem(RESOURCE_LAST_FETCH_KEY, lastFetch.toString());
+  } catch (e) {
+    console.warn('Failed to save resource history to localStorage:', e);
+  }
+}
+
 interface StoreState {
   // Stats
   stats: Stats | null;
@@ -69,8 +112,8 @@ const store = create<StoreState>((set, get) => ({
   flashReceived: 0,
   flashAdvert: 0,
 
-  resourceHistory: [],
-  lastResourceFetch: 0,
+  resourceHistory: loadResourceHistory(),
+  lastResourceFetch: loadLastResourceFetch(),
 
   // Actions
   fetchStats: async () => {
@@ -211,6 +254,9 @@ const store = create<StoreState>((set, get) => ({
     
     console.log('[Store] Adding resource point, new length:', trimmed.length);
     set({ resourceHistory: trimmed, lastResourceFetch: now });
+    
+    // Persist to localStorage
+    saveResourceHistory(trimmed, now);
   },
 }));
 
