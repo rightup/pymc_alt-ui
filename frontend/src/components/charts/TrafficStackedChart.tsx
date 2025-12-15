@@ -31,6 +31,26 @@ interface TrafficStackedChartProps {
 // Legend order: TX Util, RX Util, Received, Forwarded, Dropped
 const LEGEND_ORDER = ['TX Util', 'RX Util', 'Received', 'Forwarded', 'Dropped'];
 
+// Simple moving average window (number of periods)
+const SMA_WINDOW = 4;
+
+/** Apply simple moving average - averages the previous N periods */
+function simpleMovingAverage(data: number[], window: number): number[] {
+  if (data.length === 0) return [];
+  const result: number[] = [];
+  
+  for (let i = 0; i < data.length; i++) {
+    // Average from (i - window + 1) to i, clamped to valid indices
+    const start = Math.max(0, i - window + 1);
+    let sum = 0;
+    for (let j = start; j <= i; j++) {
+      sum += data[j];
+    }
+    result.push(sum / (i - start + 1));
+  }
+  return result;
+}
+
 // Custom legend component - left justified with specific order
 function TrafficLegend({ payload }: { payload?: Array<{ value: string; color: string }> }) {
   if (!payload) return null;
@@ -125,7 +145,8 @@ function TrafficStackedChartComponent({
     const totalTransmitted = transmitted?.reduce((sum, b) => sum + b.count, 0) ?? 
                              forwarded.reduce((sum, b) => sum + b.count, 0);
 
-    return received.map((bucket, i) => {
+    // First pass: collect raw data
+    const rawData = received.map((bucket, i) => {
       // 24-hour time format
       const time = new Date(bucket.start * 1000).toLocaleTimeString([], {
         hour: '2-digit',
@@ -157,6 +178,18 @@ function TrafficStackedChartComponent({
         rxUtil: util.rxUtil,
       };
     });
+    
+    // Apply simple moving average to smooth utilization lines
+    const txUtilValues = rawData.map(d => d.txUtil);
+    const rxUtilValues = rawData.map(d => d.rxUtil);
+    const smoothedTx = simpleMovingAverage(txUtilValues, SMA_WINDOW);
+    const smoothedRx = simpleMovingAverage(rxUtilValues, SMA_WINDOW);
+    
+    return rawData.map((d, i) => ({
+      ...d,
+      txUtil: smoothedTx[i],
+      rxUtil: smoothedRx[i],
+    }));
   }, [received, forwarded, dropped, transmitted, utilizationBins, txUtilization, rxUtilization]);
 
   if (chartData.length === 0) {
