@@ -21,9 +21,10 @@ function NoiseFloorHeatmapComponent({ timestamps, values, height = 224 }: NoiseF
       return { cells: [], stats: null, xLabels: [], yLabels: [] };
     }
 
-    // Grid dimensions - more columns for higher time resolution
-    const cols = Math.min(120, timestamps.length);
-    const rows = 40;
+    // Grid dimensions - maximize resolution to show all data points
+    // Each column represents ~30 seconds of data when fully utilized
+    const cols = Math.min(360, timestamps.length); // Up to 3 hours at 30s intervals
+    const rows = 60; // Finer vertical resolution
 
     // Calculate value range with padding
     const minVal = Math.min(...values);
