@@ -85,11 +85,13 @@ const [brightness, setBrightness] = useState(80); // 0-100, default 80%
 
   // Calculate brightness delta from drag distance
   // Moving up = brighter, down = dimmer
-  // 200px of drag = full 0-100 range
-  const calcBrightnessFromDrag = (clientY: number): number => {
+  // Touch: 200px drag = full 0-100 range (comfortable for finger)
+  // Mouse: 80px drag = full 0-100 range (more responsive for desktop)
+  const calcBrightnessFromDrag = (clientY: number, isTouch: boolean): number => {
     if (!dragStartRef.current) return brightness;
     const deltaY = dragStartRef.current.y - clientY; // Negative = down, positive = up
-    const deltaBrightness = (deltaY / 200) * 100; // 200px = 100% change
+    const dragDistance = isTouch ? 200 : 80; // Touch needs more distance, mouse is more precise
+    const deltaBrightness = (deltaY / dragDistance) * 100;
     const newValue = Math.round(Math.max(0, Math.min(100, dragStartRef.current.brightness + deltaBrightness)));
     return newValue;
   };
@@ -127,7 +129,7 @@ const [brightness, setBrightness] = useState(80); // 0-100, default 80%
               const onMove = (ev: TouchEvent) => {
                 ev.preventDefault();
                 const touch = ev.touches[0];
-                handleBrightnessChange(calcBrightnessFromDrag(touch.clientY));
+                handleBrightnessChange(calcBrightnessFromDrag(touch.clientY, true));
               };
               const onEnd = () => {
                 document.removeEventListener('touchmove', onMove);
@@ -151,7 +153,7 @@ const [brightness, setBrightness] = useState(80); // 0-100, default 80%
               setShowSlider(true);
               
               const onMove = (ev: MouseEvent) => {
-                handleBrightnessChange(calcBrightnessFromDrag(ev.clientY));
+                handleBrightnessChange(calcBrightnessFromDrag(ev.clientY, false));
               };
               const onUp = () => {
                 document.removeEventListener('mousemove', onMove);
