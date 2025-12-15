@@ -2,13 +2,13 @@
                 @keyframes radar-pulse-scale {
                   0% {
                     transform: scale(0);
-                    opacity: 0.6;
-                    stroke-width: 4;
+                    opacity: 0.9;
+                    stroke-width: 10;
                   }
                   100% {
                     transform: scale(1);
                     opacity: 0;
-                    stroke-width: 0.5;
+                    stroke-width: 1;
                   }
                 }
                 @keyframes local-node-ping {
