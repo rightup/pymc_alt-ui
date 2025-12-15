@@ -1,8 +1,15 @@
 'use client';
 
-import { memo, useMemo, useState } from 'react';
+import { memo, useMemo, useState, useEffect, useRef } from 'react';
 import { Compass } from 'lucide-react';
 import type { NeighborInfo } from '@/types/api';
+
+// Pulse interval in ms
+const PULSE_INTERVAL = 10000;
+// Pulse animation duration in ms  
+const PULSE_DURATION = 2000;
+// Blink duration in ms
+const BLINK_DURATION = 600;
 
 interface NeighborPolarChartProps {
   neighbors: Record<string, NeighborInfo>;
@@ -67,6 +74,7 @@ interface ProcessedNeighbor {
   distance: number;  // km
   // Polar coordinates for SVG (0-1 normalized)
   normalizedDistance: number;
+  lastSeen: number;  // timestamp for blink detection
 }
 
 /**
@@ -80,6 +88,17 @@ function NeighborPolarChartComponent({
   localLon,
 }: NeighborPolarChartProps) {
   const [hoveredNeighbor, setHoveredNeighbor] = useState<ProcessedNeighbor | null>(null);
+  const [blinkingHashes, setBlinkingHashes] = useState<Set<string>>(new Set());
+  const [pulseKey, setPulseKey] = useState(0);
+  const prevLastSeenRef = useRef<Record<string, number>>({});
+  
+  // Radar pulse effect - trigger every PULSE_INTERVAL
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setPulseKey(k => k + 1);
+    }, PULSE_INTERVAL);
+    return () => clearInterval(interval);
+  }, []);
   
   // Process neighbors into polar coordinates
   const { processedNeighbors, maxDistance, totalNeighbors } = useMemo(() => {
@@ -106,6 +125,7 @@ function NeighborPolarChartComponent({
         bearing,
         distance,
         normalizedDistance: 0, // Will be set after we know maxDistance
+        lastSeen: neighbor.last_seen,
       });
     }
 
@@ -120,6 +140,37 @@ function NeighborPolarChartComponent({
 
     return { processedNeighbors: processed, maxDistance: maxDist, totalNeighbors: processed.length };
   }, [neighbors, localLat, localLon]);
+  
+  // Detect changes in last_seen to trigger blink
+  useEffect(() => {
+    const newBlinks: string[] = [];
+    
+    for (const neighbor of processedNeighbors) {
+      const prevLastSeen = prevLastSeenRef.current[neighbor.hash];
+      if (prevLastSeen !== undefined && prevLastSeen !== neighbor.lastSeen) {
+        // This neighbor has new data - trigger blink
+        newBlinks.push(neighbor.hash);
+      }
+      prevLastSeenRef.current[neighbor.hash] = neighbor.lastSeen;
+    }
+    
+    if (newBlinks.length > 0) {
+      setBlinkingHashes(prev => {
+        const next = new Set(prev);
+        newBlinks.forEach(h => next.add(h));
+        return next;
+      });
+      
+      // Clear blink after animation
+      setTimeout(() => {
+        setBlinkingHashes(prev => {
+          const next = new Set(prev);
+          newBlinks.forEach(h => next.delete(h));
+          return next;
+        });
+      }, BLINK_DURATION);
+    }
+  }, [processedNeighbors]);
 
   // Check if we have valid local coordinates
   const hasLocalCoords = localLat !== 0 && localLon !== 0;
@@ -173,6 +224,41 @@ function NeighborPolarChartComponent({
       {/* Radar SVG */}
       <div className="relative h-[280px]">
         <svg width={size} height={size} className="mx-auto">
+          {/* SVG Definitions for animations */}
+          <defs>
+            {/* Radar pulse animation - ease-out expansion */}
+            <style>
+              {`
+                @keyframes radar-pulse {
+                  0% {
+                    r: 0;
+                    opacity: 0.4;
+                  }
+                  100% {
+                    r: ${radius};
+                    opacity: 0;
+                  }
+                }
+                @keyframes neighbor-blink {
+                  0%, 100% {
+                    opacity: 0;
+                    r: 14;
+                  }
+                  50% {
+                    opacity: 0.7;
+                    r: 18;
+                  }
+                }
+                .radar-pulse-circle {
+                  animation: radar-pulse ${PULSE_DURATION}ms cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
+                }
+                .neighbor-blink {
+                  animation: neighbor-blink ${BLINK_DURATION}ms ease-out forwards;
+                }
+              `}
+            </style>
+          </defs>
+          
           {/* Grid circles */}
           {gridCircles.map((scale) => (
             <circle
@@ -185,6 +271,18 @@ function NeighborPolarChartComponent({
               strokeWidth={1}
             />
           ))}
+          
+          {/* Radar pulse - expanding circle from center */}
+          <circle
+            key={`pulse-${pulseKey}`}
+            cx={center}
+            cy={center}
+            r={0}
+            fill="none"
+            stroke="rgba(255,255,255,0.4)"
+            strokeWidth={1.5}
+            className="radar-pulse-circle"
+          />
           
           {/* Compass lines (N-S, E-W, diagonals) */}
           {DIRECTIONS.map((dir, i) => {
@@ -238,9 +336,22 @@ function NeighborPolarChartComponent({
             const { x, y } = polarToXY(neighbor.bearing, neighbor.normalizedDistance);
             const color = getSnrColor(neighbor.snr);
             const isHovered = hoveredNeighbor?.hash === neighbor.hash;
+            const isBlinking = blinkingHashes.has(neighbor.hash);
             
             return (
               <g key={neighbor.hash}>
+                {/* Blink ring on new data */}
+                {isBlinking && (
+                  <circle
+                    cx={x}
+                    cy={y}
+                    r={14}
+                    fill="none"
+                    stroke="rgba(255,255,255,0.8)"
+                    strokeWidth={2}
+                    className="neighbor-blink"
+                  />
+                )}
                 {/* Glow effect for hovered */}
                 {isHovered && (
                   <circle
