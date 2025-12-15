@@ -277,12 +277,18 @@ function ResourcesTooltip({ active, payload, label }: { active?: boolean; payloa
 
 /** 
  * Build a fixed-slot array for the 20-minute window.
- * Data is right-aligned (newest on right), with nulls for empty slots.
+ * Window is anchored to the latest data point's slot boundary to prevent jitter.
  */
-function buildFixedWindowData(data: ResourceDataPoint[]): Array<{ slot: number; time: string; cpu: number | null; memory: number | null }> {
-  const now = Date.now();
-  const windowStart = now - WINDOW_MS;
+function buildFixedWindowData(
+  data: ResourceDataPoint[],
+  latestTimestamp: number
+): Array<{ slot: number; time: string; cpu: number | null; memory: number | null }> {
   const slotDuration = POLLING_INTERVALS.system;
+  
+  // Anchor window end to the slot boundary of the latest data point
+  // This prevents the window from shifting continuously with Date.now()
+  const anchoredEnd = Math.ceil(latestTimestamp / slotDuration) * slotDuration;
+  const windowStart = anchoredEnd - WINDOW_MS;
   
   // Create fixed slots for the entire 20-minute window
   const slots: Array<{ slot: number; time: string; cpu: number | null; memory: number | null }> = [];
@@ -319,8 +325,13 @@ const SystemResourcesChart = memo(function SystemResourcesChart({
 }: { 
   data: ResourceDataPoint[];
 }) {
-  // Build fixed 20-minute window data
-  const chartData = buildFixedWindowData(data);
+  // Get latest timestamp to anchor the window (or use now if no data)
+  const latestTimestamp = data.length > 0 
+    ? Math.max(...data.map(d => d.timestamp))
+    : Date.now();
+  
+  // Build fixed 20-minute window data anchored to latest data point
+  const chartData = buildFixedWindowData(data, latestTimestamp);
   
   // Show X-axis ticks at 5-minute intervals (every ~100 slots at 3s polling)
   const tickInterval = Math.floor(NUM_SLOTS / 4);
