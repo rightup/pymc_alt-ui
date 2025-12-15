@@ -186,7 +186,10 @@ const store = create<StoreState>((set, get) => ({
     const { lastResourceFetch, resourceHistory } = get();
     
     // Prevent duplicate entries if called multiple times rapidly
-    if (now - lastResourceFetch < 1000) return;
+    if (now - lastResourceFetch < 1000) {
+      console.log('[Store] Skipping duplicate (too fast)');
+      return;
+    }
     
     const timeStr = new Date(now).toLocaleTimeString([], {
       hour: '2-digit',
@@ -206,6 +209,7 @@ const store = create<StoreState>((set, get) => ({
     // Keep only the most recent maxSlots entries
     const trimmed = updated.length > maxSlots ? updated.slice(-maxSlots) : updated;
     
+    console.log('[Store] Adding resource point, new length:', trimmed.length);
     set({ resourceHistory: trimmed, lastResourceFetch: now });
   },
 }));
