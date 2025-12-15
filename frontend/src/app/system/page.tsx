@@ -451,6 +451,8 @@ export default function SystemStatsPage() {
 
   useEffect(() => {
     let mounted = true;
+    let worker: Worker | null = null;
+    
     const doFetch = async () => {
       if (mounted) {
         await fetchStats();
@@ -458,10 +460,33 @@ export default function SystemStatsPage() {
       }
     };
     void doFetch();
-    const interval = setInterval(fetchStats, POLLING_INTERVALS.system);
+    
+    // Use Web Worker for background-resistant polling
+    // Workers aren't throttled when the tab is in the background
+    if (typeof Worker !== 'undefined') {
+      const workerCode = `
+        const interval = ${POLLING_INTERVALS.system};
+        setInterval(() => postMessage('tick'), interval);
+      `;
+      const blob = new Blob([workerCode], { type: 'application/javascript' });
+      worker = new Worker(URL.createObjectURL(blob));
+      worker.onmessage = () => {
+        if (mounted) void fetchStats();
+      };
+    } else {
+      // Fallback for environments without Worker support
+      const interval = setInterval(fetchStats, POLLING_INTERVALS.system);
+      return () => {
+        mounted = false;
+        clearInterval(interval);
+      };
+    }
+    
     return () => {
       mounted = false;
-      clearInterval(interval);
+      if (worker) {
+        worker.terminate();
+      }
     };
   }, [fetchStats]);
 
