@@ -276,25 +276,25 @@ function ResourcesTooltip({ active, payload, label }: { active?: boolean; payloa
 }
 
 /** 
- * Build a fixed-slot array for the 20-minute window.
- * Window is anchored to the latest data point's slot boundary to prevent jitter.
+ * Build chart data array with fixed NUM_SLOTS positions.
+ * Data is right-aligned (newest on right), with nulls padding the left.
+ * This approach preserves data even after idle periods.
  */
-function buildFixedWindowData(
-  data: ResourceDataPoint[],
-  latestTimestamp: number
+function buildChartData(
+  data: ResourceDataPoint[]
 ): Array<{ slot: number; time: string; cpu: number | null; memory: number | null }> {
-  const slotDuration = POLLING_INTERVALS.system;
-  
-  // Anchor window end to the slot boundary of the latest data point
-  // This prevents the window from shifting continuously with Date.now()
-  const anchoredEnd = Math.ceil(latestTimestamp / slotDuration) * slotDuration;
-  const windowStart = anchoredEnd - WINDOW_MS;
-  
-  // Create fixed slots for the entire 20-minute window
+  // Create fixed-size array with nulls
   const slots: Array<{ slot: number; time: string; cpu: number | null; memory: number | null }> = [];
   
-  for (let i = 0; i < NUM_SLOTS; i++) {
-    const slotTime = windowStart + (i * slotDuration);
+  // Calculate how many empty slots to prepend (right-align the data)
+  const emptySlots = Math.max(0, NUM_SLOTS - data.length);
+  
+  // Fill empty slots on the left with placeholder times
+  const now = Date.now();
+  const slotDuration = POLLING_INTERVALS.system;
+  for (let i = 0; i < emptySlots; i++) {
+    // Calculate what time this slot would represent if we had data
+    const slotTime = now - (NUM_SLOTS - i) * slotDuration;
     const timeStr = new Date(slotTime).toLocaleTimeString([], {
       hour: '2-digit',
       minute: '2-digit',
@@ -303,17 +303,16 @@ function buildFixedWindowData(
     slots.push({ slot: i, time: timeStr, cpu: null, memory: null });
   }
   
-  // Place actual data into the appropriate slots
-  for (const point of data) {
-    const slotIndex = Math.floor((point.timestamp - windowStart) / slotDuration);
-    if (slotIndex >= 0 && slotIndex < NUM_SLOTS) {
-      slots[slotIndex] = {
-        slot: slotIndex,
-        time: point.time.slice(0, 5), // HH:MM only for display
-        cpu: point.cpu,
-        memory: point.memory,
-      };
-    }
+  // Add actual data points (they go on the right side)
+  const dataToShow = data.slice(-NUM_SLOTS); // Take most recent if somehow more than NUM_SLOTS
+  for (let i = 0; i < dataToShow.length; i++) {
+    const point = dataToShow[i];
+    slots.push({
+      slot: emptySlots + i,
+      time: point.time.slice(0, 5), // HH:MM only for display
+      cpu: point.cpu,
+      memory: point.memory,
+    });
   }
   
   return slots;
@@ -325,13 +324,8 @@ const SystemResourcesChart = memo(function SystemResourcesChart({
 }: { 
   data: ResourceDataPoint[];
 }) {
-  // Get latest timestamp to anchor the window (or use now if no data)
-  const latestTimestamp = data.length > 0 
-    ? Math.max(...data.map(d => d.timestamp))
-    : Date.now();
-  
-  // Build fixed 20-minute window data anchored to latest data point
-  const chartData = buildFixedWindowData(data, latestTimestamp);
+  // Build chart data with fixed slots, data right-aligned
+  const chartData = buildChartData(data);
   
   // Show X-axis ticks at 5-minute intervals (every ~100 slots at 3s polling)
   const tickInterval = Math.floor(NUM_SLOTS / 4);
@@ -441,15 +435,20 @@ export default function SystemStatsPage() {
           });
           
           setResourceHistory(prev => {
-            const cutoff = now - WINDOW_MS;
-            // Filter out old entries and add new one
-            const filtered = prev.filter(p => p.timestamp > cutoff);
-            return [...filtered, {
+            // Keep entries by count (NUM_SLOTS) rather than time-based pruning
+            // This prevents data loss when browser goes idle and wakes up
+            const newEntry = {
               timestamp: now,
               time: timeStr,
               cpu: response.data!.cpu.usage_percent,
               memory: response.data!.memory.usage_percent,
-            }];
+            };
+            const updated = [...prev, newEntry];
+            // Keep only the most recent NUM_SLOTS entries
+            if (updated.length > NUM_SLOTS) {
+              return updated.slice(-NUM_SLOTS);
+            }
+            return updated;
           });
         }
       } else {
