@@ -25,7 +25,10 @@ export function BackgroundSelector() {
 const [brightness, setBrightness] = useState(80); // 0-100, default 80%
   const [showSlider, setShowSlider] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const sliderRef = useRef<HTMLDivElement>(null);
+  // Track drag start Y and initial brightness for relative dragging
+  const dragStartRef = useRef<{ y: number; brightness: number } | null>(null);
 
   // Load preference from localStorage on mount
   useEffect(() => {
@@ -80,11 +83,22 @@ const [brightness, setBrightness] = useState(80); // 0-100, default 80%
     return <div className="flex gap-2" />;
   }
 
+  // Calculate brightness delta from drag distance
+  // Moving up = brighter, down = dimmer
+  // 200px of drag = full 0-100 range
+  const calcBrightnessFromDrag = (clientY: number): number => {
+    if (!dragStartRef.current) return brightness;
+    const deltaY = dragStartRef.current.y - clientY; // Negative = down, positive = up
+    const deltaBrightness = (deltaY / 200) * 100; // 200px = 100% change
+    const newValue = Math.round(Math.max(0, Math.min(100, dragStartRef.current.brightness + deltaBrightness)));
+    return newValue;
+  };
+
   return (
     <div className="flex gap-2 items-center flex-shrink-0">
       {BACKGROUNDS.map((bg) => {
         const isSelected = selected === bg.id;
-        const isSliderActive = isSelected && showSlider;
+        const showOverlay = isSelected && (showSlider || isDragging);
         
         return (
           <div
@@ -92,68 +106,98 @@ const [brightness, setBrightness] = useState(80); // 0-100, default 80%
             ref={isSelected ? sliderRef : undefined}
             className={clsx(
               'relative rounded-md overflow-hidden transition-all duration-300 ease-out',
-              'ring-offset-1 ring-offset-bg-body cursor-pointer',
+              'ring-offset-1 ring-offset-bg-body w-10 h-10',
               isSelected
-                ? 'ring-2 ring-accent-primary scale-105 w-10 h-10'
-                : 'ring-1 ring-white/20 hover:ring-white/40 opacity-70 hover:opacity-100 w-10 h-10'
+                ? 'ring-2 ring-accent-primary scale-105 cursor-ns-resize'
+                : 'ring-1 ring-white/20 hover:ring-white/40 opacity-70 hover:opacity-100 cursor-pointer'
             )}
             onMouseEnter={() => isSelected && setShowSlider(true)}
-            onMouseLeave={() => setShowSlider(false)}
+            onMouseLeave={() => !isDragging && setShowSlider(false)}
             onClick={() => !isSelected && handleSelect(bg.id)}
-            onMouseDown={(e) => {
-              if (!isSliderActive) return;
+            onTouchStart={(e) => {
+              if (!isSelected) return;
               e.preventDefault();
               
-              const updateFromEvent = (ev: MouseEvent | React.MouseEvent) => {
-                const rect = sliderRef.current?.getBoundingClientRect();
-                if (!rect) return;
-                const y = ev.clientY - rect.top;
-                const value = Math.round(Math.max(0, Math.min(100, (1 - y / rect.height) * 100)));
-                handleBrightnessChange(value);
+              // Start drag tracking
+              const touch = e.touches[0];
+              dragStartRef.current = { y: touch.clientY, brightness };
+              setIsDragging(true);
+              setShowSlider(true);
+              
+              const onMove = (ev: TouchEvent) => {
+                ev.preventDefault();
+                const touch = ev.touches[0];
+                handleBrightnessChange(calcBrightnessFromDrag(touch.clientY));
+              };
+              const onEnd = () => {
+                document.removeEventListener('touchmove', onMove);
+                document.removeEventListener('touchend', onEnd);
+                dragStartRef.current = null;
+                setIsDragging(false);
+                // Keep slider visible briefly after release
+                setTimeout(() => setShowSlider(false), 1500);
               };
               
-              updateFromEvent(e);
+              document.addEventListener('touchmove', onMove, { passive: false });
+              document.addEventListener('touchend', onEnd);
+            }}
+            onMouseDown={(e) => {
+              if (!isSelected) return;
+              e.preventDefault();
               
-              const onMove = (ev: MouseEvent) => updateFromEvent(ev);
+              // Start drag tracking
+              dragStartRef.current = { y: e.clientY, brightness };
+              setIsDragging(true);
+              setShowSlider(true);
+              
+              const onMove = (ev: MouseEvent) => {
+                handleBrightnessChange(calcBrightnessFromDrag(ev.clientY));
+              };
               const onUp = () => {
                 document.removeEventListener('mousemove', onMove);
                 document.removeEventListener('mouseup', onUp);
+                dragStartRef.current = null;
+                setIsDragging(false);
               };
               document.addEventListener('mousemove', onMove);
               document.addEventListener('mouseup', onUp);
             }}
           >
-            {/* Background image - always visible */}
+            {/* Background image - dims when adjusting */}
             <div 
-              className="absolute inset-0 bg-cover bg-center transition-opacity duration-300"
+              className="absolute inset-0 bg-cover bg-center transition-opacity duration-200"
               style={{ 
                 backgroundImage: `url(${bg.src})`,
-                opacity: isSliderActive ? 0.3 : 1 
+                opacity: showOverlay ? 0.4 : 1 
               }}
             />
             
-            {/* Slider overlay - fades in on hover for selected */}
+            {/* Brightness fill overlay - shows current level */}
             {isSelected && (
               <div 
                 className={clsx(
-                  'absolute inset-0 flex flex-col items-center justify-center transition-opacity duration-200',
-                  isSliderActive ? 'opacity-100' : 'opacity-0 pointer-events-none'
+                  'absolute inset-0 transition-opacity duration-200',
+                  showOverlay ? 'opacity-100' : 'opacity-0'
                 )}
               >
-                {/* Gradient track */}
-                <div className="absolute inset-x-1 inset-y-1 rounded bg-gradient-to-b from-white/40 via-white/10 to-black/90" />
-                
-                {/* Fill showing current brightness */}
+                {/* Dark fill from bottom showing dimmed portion */}
                 <div 
-                  className="absolute inset-x-1 bottom-1 rounded-b bg-black/60 transition-all duration-150 ease-out"
+                  className="absolute inset-x-0 bottom-0 bg-black/70 transition-all duration-100 ease-out"
                   style={{ height: `${100 - brightness}%` }}
                 />
                 
-                {/* Handle indicator */}
+                {/* Brightness line indicator */}
                 <div
-                  className="absolute left-1 right-1 h-0.5 bg-accent-primary rounded-full shadow-glow transition-all duration-150 ease-out"
+                  className="absolute inset-x-1 h-0.5 bg-white rounded-full shadow-lg transition-all duration-100 ease-out"
                   style={{ top: `${100 - brightness}%` }}
                 />
+                
+                {/* Percentage in center */}
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className="text-[10px] font-mono font-bold text-white drop-shadow-lg">
+                    {brightness}%
+                  </span>
+                </div>
               </div>
             )}
           </div>

@@ -1,7 +1,7 @@
 1:"$Sreact.fragment"
-2:I[17608,["177","static/chunks/app/layout-4b02ea77335ae024.js"],"BackgroundProvider"]
-3:I[51568,["177","static/chunks/app/layout-4b02ea77335ae024.js"],"Sidebar"]
+2:I[17608,["177","static/chunks/app/layout-07cb276208f68062.js"],"BackgroundProvider"]
+3:I[51568,["177","static/chunks/app/layout-07cb276208f68062.js"],"Sidebar"]
 4:I[57121,[],""]
 5:I[74581,[],""]
-:HL["/_next/static/css/8ec033ba1640a9fa.css","style"]
-0:{"buildId":"5iIIW88DXQlTcOXIed8h8","rsc":["$","$1","c",{"children":[[["$","link","0",{"rel":"stylesheet","href":"/_next/static/css/8ec033ba1640a9fa.css","precedence":"next"}]],["$","html",null,{"lang":"en","className":"dark","children":["$","body",null,{"className":"__variable_37ef13 __variable_e896d9 antialiased bg-bg-body min-h-screen","children":[["$","$L2",null,{}],["$","div",null,{"className":"flex min-h-screen","children":[["$","$L3",null,{}],["$","main",null,{"className":"flex-1 min-w-0 pt-14 lg:pt-0","children":["$","div",null,{"className":"h-full overflow-y-auto","children":["$","div",null,{"className":"p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto","children":["$","$L4",null,{"parallelRouterKey":"children","template":["$","$L5",null,{}]}]}]}]}]]}]]}]}]]}],"loading":null,"isPartial":false}
+:HL["/_next/static/css/d3ea45b60aeb0c69.css","style"]
+0:{"buildId":"02FLs5W7yuTq-OEWLVeyW","rsc":["$","$1","c",{"children":[[["$","link","0",{"rel":"stylesheet","href":"/_next/static/css/d3ea45b60aeb0c69.css","precedence":"next"}]],["$","html",null,{"lang":"en","className":"dark","children":["$","body",null,{"className":"__variable_37ef13 __variable_e896d9 antialiased bg-bg-body min-h-screen","children":[["$","$L2",null,{}],["$","div",null,{"className":"flex min-h-screen","children":[["$","$L3",null,{}],["$","main",null,{"className":"flex-1 min-w-0 pt-14 lg:pt-0","children":["$","div",null,{"className":"h-full overflow-y-auto","children":["$","div",null,{"className":"p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto","children":["$","$L4",null,{"parallelRouterKey":"children","template":["$","$L5",null,{}]}]}]}]}]]}]]}]}]]}],"loading":null,"isPartial":false}
