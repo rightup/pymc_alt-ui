@@ -406,6 +406,11 @@ export default function SystemStatsPage() {
   // Use global store for resource history (persists across page navigation)
   const resourceHistory = useResourceHistory();
   const addResourceDataPoint = useAddResourceDataPoint();
+  
+  // Debug: log store state on mount/update
+  useEffect(() => {
+    console.log('[System] resourceHistory length:', resourceHistory.length);
+  }, [resourceHistory.length]);
 
   // Memoized fetch function that also accumulates history
   const fetchStats = useCallback(async () => {
