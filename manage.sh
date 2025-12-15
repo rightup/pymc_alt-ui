@@ -764,6 +764,7 @@ do_install() {
     patch_nextjs_static_serving "$INSTALL_DIR"   # PATCH 1: Next.js static export support
     patch_api_endpoints "$INSTALL_DIR"           # PATCH 2: Radio config API endpoint
     patch_logging_section "$INSTALL_DIR"         # PATCH 3: Ensure logging section exists
+    patch_log_level_api "$INSTALL_DIR"           # PATCH 4: Log level toggle API
     
     # =========================================================================
     # Step 5: Install dashboard and console extras
@@ -982,6 +983,7 @@ do_upgrade() {
     patch_nextjs_static_serving "$INSTALL_DIR"   # PATCH 1: Next.js static export support
     patch_api_endpoints "$INSTALL_DIR"           # PATCH 2: Radio config API endpoint
     patch_logging_section "$INSTALL_DIR"         # PATCH 3: Ensure logging section exists
+    patch_log_level_api "$INSTALL_DIR"           # PATCH 4: Log level toggle API
     
     # Update our Next.js dashboard (overlays upstream's frontend)
     if [ -d "$SCRIPT_DIR/frontend/out" ]; then
@@ -1986,6 +1988,11 @@ run_upstream_installer() {
 #    - Prevents KeyError when config.yaml lacks 'logging' section (affects DEBUG arg)
 #    - PR Status: Pending
 #
+# 4. patch_log_level_api (api_endpoints.py)
+#    - Adds POST /api/set_log_level endpoint
+#    - Allows web UI to toggle log level (INFO/DEBUG) and restart service
+#    - PR Status: Pending
+#
 # NOTE: GPIO patches (Fix A-D) were removed after discovery that the real issue
 # was a race condition in pymc_core's interrupt initialization. Adding --log-level
 # DEBUG to the service provides enough delay for the asyncio event loop to
@@ -2275,6 +2282,128 @@ PATCHEOF
         print_success "Patched api_endpoints.py with update_radio_config"
     else
         print_warning "API patch may not have applied correctly"
+    fi
+}
+
+# ------------------------------------------------------------------------------
+# PATCH 4: Log Level API Endpoint
+# ------------------------------------------------------------------------------
+# File: repeater/web/api_endpoints.py
+# Purpose: Allow web UI to toggle log level (INFO/DEBUG) without SSH
+# Changes:
+#   - Add POST /api/set_log_level endpoint
+#   - Updates config.yaml -> logging.level
+#   - Restarts pymc-repeater service to apply change
+#   - Returns success/failure
+# ------------------------------------------------------------------------------
+patch_log_level_api() {
+    local target_dir="${1:-$CLONE_DIR}"
+    local api_file="$target_dir/repeater/web/api_endpoints.py"
+    
+    if [ ! -f "$api_file" ]; then
+        print_warning "api_endpoints.py not found, skipping log level patch"
+        return 0
+    fi
+    
+    # Check if already patched
+    if grep -q 'def set_log_level' "$api_file" 2>/dev/null; then
+        print_info "Log level API already patched"
+        return 0
+    fi
+    
+    # Use Python to add the endpoint
+    python3 << PATCHEOF
+import re
+
+api_file = "$api_file"
+
+with open(api_file, 'r') as f:
+    content = f.read()
+
+# Add set_log_level endpoint after update_radio_config (or save_cad_settings if radio config not present)
+set_log_level_code = '''
+
+    @cherrypy.expose
+    @cherrypy.tools.json_out()
+    @cherrypy.tools.json_in()
+    def set_log_level(self):
+        """Set log level and restart service to apply
+        
+        POST /api/set_log_level
+        Body: {"level": "DEBUG" | "INFO" | "WARNING"}
+        
+        Returns: {"success": true, "data": {"level": "DEBUG", "restarting": true}}
+        """
+        import subprocess
+        try:
+            self._require_post()
+            data = cherrypy.request.json or {}
+            
+            level = data.get("level", "").upper()
+            if level not in ("DEBUG", "INFO", "WARNING", "ERROR"):
+                return self._error("Invalid log level. Use DEBUG, INFO, WARNING, or ERROR")
+            
+            # Update config.yaml
+            config_path = getattr(self, '_config_path', '/etc/pymc_repeater/config.yaml')
+            
+            # Ensure logging section exists
+            if "logging" not in self.config:
+                self.config["logging"] = {}
+            self.config["logging"]["level"] = level
+            
+            # Save config
+            self._save_config_to_file(config_path)
+            
+            logger.info(f"Log level changed to {level}, restarting service...")
+            
+            # Schedule service restart in background (so we can return response first)
+            # Use subprocess.Popen to not wait for completion
+            subprocess.Popen(
+                ["systemctl", "restart", "pymc-repeater"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True
+            )
+            
+            return self._success({
+                "level": level,
+                "restarting": True,
+                "message": f"Log level set to {level}. Service restarting..."
+            })
+            
+        except cherrypy.HTTPError:
+            raise
+        except Exception as e:
+            logger.error(f"Error setting log level: {e}")
+            return self._error(str(e))
+'''
+
+# Find insertion point - after update_radio_config if it exists, otherwise after save_cad_settings
+if 'def update_radio_config' in content:
+    # Insert after update_radio_config
+    pattern = r'(    def update_radio_config\(self\):.*?return self\._error\(str\(e\)\))'
+    match = re.search(pattern, content, re.DOTALL)
+    if match:
+        insert_pos = match.end()
+        content = content[:insert_pos] + set_log_level_code + content[insert_pos:]
+else:
+    # Fall back to inserting after save_cad_settings
+    pattern = r'(    def save_cad_settings\(self\):.*?return self\._error\(e\))'
+    match = re.search(pattern, content, re.DOTALL)
+    if match:
+        insert_pos = match.end()
+        content = content[:insert_pos] + set_log_level_code + content[insert_pos:]
+
+with open(api_file, 'w') as f:
+    f.write(content)
+print("Patched api_endpoints.py with set_log_level")
+PATCHEOF
+    
+    # Verify patch was applied
+    if grep -q 'def set_log_level' "$api_file" 2>/dev/null; then
+        print_success "Patched api_endpoints.py with set_log_level"
+    else
+        print_warning "Log level API patch may not have applied correctly"
     fi
 }
 

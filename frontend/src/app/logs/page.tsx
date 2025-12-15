@@ -1,11 +1,12 @@
 'use client';
 
-import { memo } from 'react';
+import { memo, useState, useCallback, useEffect } from 'react';
 import { useLogs, useLogsLoading, useLiveMode, useFetchLogs, useSetLiveMode } from '@/lib/stores/useStore';
 import { usePolling } from '@/lib/hooks/usePolling';
-import { FileText, Circle, RefreshCw } from 'lucide-react';
+import { FileText, Circle, RefreshCw, Bug, Info, Loader2 } from 'lucide-react';
 import clsx from 'clsx';
 import { getLogLevelColor, POLLING_INTERVALS } from '@/lib/constants';
+import { setLogLevel, type LogLevel } from '@/lib/api';
 import type { LogEntry } from '@/types/api';
 
 /** Memoized log row to prevent re-renders when other logs update */
@@ -30,6 +31,92 @@ const LogRow = memo(function LogRow({ log }: { log: LogEntry }) {
   );
 });
 
+/** Log level toggle component */
+function LogLevelToggle() {
+  // Infer current level from logs (DEBUG logs only appear when debug is enabled)
+  const logs = useLogs();
+  const [selectedLevel, setSelectedLevel] = useState<LogLevel>('INFO');
+  const [isChanging, setIsChanging] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+
+  // Infer log level from presence of DEBUG logs
+  useEffect(() => {
+    if (logs.length > 0) {
+      const hasDebugLogs = logs.some(log => log.level === 'DEBUG');
+      setSelectedLevel(hasDebugLogs ? 'DEBUG' : 'INFO');
+    }
+  }, [logs]);
+
+  const handleToggle = useCallback(async (newLevel: LogLevel) => {
+    if (newLevel === selectedLevel || isChanging) return;
+    
+    setIsChanging(true);
+    setStatusMessage(null);
+    
+    try {
+      const response = await setLogLevel(newLevel);
+      if (response.success && response.data) {
+        setSelectedLevel(newLevel);
+        setStatusMessage(response.data.message);
+        // Clear message after 5 seconds (service takes ~3s to restart)
+        setTimeout(() => setStatusMessage(null), 5000);
+      } else {
+        setStatusMessage(response.error || 'Failed to change log level');
+        setTimeout(() => setStatusMessage(null), 3000);
+      }
+    } catch {
+      setStatusMessage('Failed to change log level');
+      setTimeout(() => setStatusMessage(null), 3000);
+    } finally {
+      setIsChanging(false);
+    }
+  }, [selectedLevel, isChanging]);
+
+  return (
+    <div className="flex items-center gap-2">
+      {statusMessage && (
+        <span className="text-xs text-text-muted animate-pulse">
+          {statusMessage}
+        </span>
+      )}
+      <div className="flex rounded-lg border border-border-subtle overflow-hidden">
+        <button
+          onClick={() => handleToggle('INFO')}
+          disabled={isChanging}
+          className={clsx(
+            'px-3 py-1.5 text-xs font-medium flex items-center gap-1.5 transition-colors',
+            selectedLevel === 'INFO'
+              ? 'bg-accent-primary/20 text-accent-primary'
+              : 'bg-bg-subtle text-text-muted hover:bg-bg-elevated',
+            isChanging && 'opacity-50 cursor-not-allowed'
+          )}
+        >
+          <Info className="w-3 h-3" />
+          INFO
+        </button>
+        <button
+          onClick={() => handleToggle('DEBUG')}
+          disabled={isChanging}
+          className={clsx(
+            'px-3 py-1.5 text-xs font-medium flex items-center gap-1.5 transition-colors border-l border-border-subtle',
+            selectedLevel === 'DEBUG'
+              ? 'bg-amber-500/20 text-amber-400'
+              : 'bg-bg-subtle text-text-muted hover:bg-bg-elevated',
+            isChanging && 'opacity-50 cursor-not-allowed'
+          )}
+        >
+          {isChanging ? (
+            <Loader2 className="w-3 h-3 animate-spin" />
+          ) : (
+            <Bug className="w-3 h-3" />
+          )}
+          DEBUG
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function LogsPage() {
   const logs = useLogs();
   const logsLoading = useLogsLoading();
@@ -48,6 +135,7 @@ export default function LogsPage() {
           System Logs
         </h1>
         <div className="flex items-center gap-3 sm:gap-4">
+          <LogLevelToggle />
           {liveMode && (
             <div className="flex items-center gap-2 text-sm">
               <Circle className="w-2 h-2 fill-accent-success text-accent-success animate-pulse" />

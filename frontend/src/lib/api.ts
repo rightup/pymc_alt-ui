@@ -443,3 +443,20 @@ export async function updateRadioConfig(config: RadioConfigUpdate): Promise<ApiR
     body: JSON.stringify(config),
   });
 }
+
+// Log level types
+export type LogLevel = 'DEBUG' | 'INFO' | 'WARNING' | 'ERROR';
+
+export interface LogLevelResult {
+  level: LogLevel;
+  restarting: boolean;
+  message: string;
+}
+
+// Set log level (triggers service restart)
+export async function setLogLevel(level: LogLevel): Promise<ApiResponse<LogLevelResult>> {
+  return fetchApi<ApiResponse<LogLevelResult>>('/api/set_log_level', {
+    method: 'POST',
+    body: JSON.stringify({ level }),
+  });
+}
