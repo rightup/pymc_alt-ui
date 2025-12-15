@@ -766,6 +766,12 @@ do_install() {
     patch_logging_section "$INSTALL_DIR"         # PATCH 3: Ensure logging section exists
     patch_log_level_api "$INSTALL_DIR"           # PATCH 4: Log level toggle API
     
+    # Set DEBUG logging as default
+    if [ -f "$CONFIG_DIR/config.yaml" ]; then
+        yq -i '.logging.level = "DEBUG"' "$CONFIG_DIR/config.yaml" 2>/dev/null || true
+        print_success "Set log level to DEBUG"
+    fi
+    
     # =========================================================================
     # Step 5: Install dashboard and console extras
     # =========================================================================
@@ -984,6 +990,12 @@ do_upgrade() {
     patch_api_endpoints "$INSTALL_DIR"           # PATCH 2: Radio config API endpoint
     patch_logging_section "$INSTALL_DIR"         # PATCH 3: Ensure logging section exists
     patch_log_level_api "$INSTALL_DIR"           # PATCH 4: Log level toggle API
+    
+    # Set DEBUG logging as default
+    if [ -f "$CONFIG_DIR/config.yaml" ]; then
+        yq -i '.logging.level = "DEBUG"' "$CONFIG_DIR/config.yaml" 2>/dev/null || true
+        print_success "Set log level to DEBUG"
+    fi
     
     # Update our Next.js dashboard (overlays upstream's frontend)
     if [ -d "$SCRIPT_DIR/frontend/out" ]; then
