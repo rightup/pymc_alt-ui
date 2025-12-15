@@ -222,6 +222,8 @@ const MEMORY_COLOR = '#F9D26F'; // Amber/Yellow
 
 // 20-minute window in milliseconds
 const WINDOW_MS = 20 * 60 * 1000;
+// Number of slots in the 20-minute window (at 3s polling = 400 slots)
+const NUM_SLOTS = Math.floor(WINDOW_MS / POLLING_INTERVALS.system);
 
 /** Data point for historical tracking */
 interface ResourceDataPoint {
@@ -273,12 +275,55 @@ function ResourcesTooltip({ active, payload, label }: { active?: boolean; payloa
   );
 }
 
+/** 
+ * Build a fixed-slot array for the 20-minute window.
+ * Data is right-aligned (newest on right), with nulls for empty slots.
+ */
+function buildFixedWindowData(data: ResourceDataPoint[]): Array<{ slot: number; time: string; cpu: number | null; memory: number | null }> {
+  const now = Date.now();
+  const windowStart = now - WINDOW_MS;
+  const slotDuration = POLLING_INTERVALS.system;
+  
+  // Create fixed slots for the entire 20-minute window
+  const slots: Array<{ slot: number; time: string; cpu: number | null; memory: number | null }> = [];
+  
+  for (let i = 0; i < NUM_SLOTS; i++) {
+    const slotTime = windowStart + (i * slotDuration);
+    const timeStr = new Date(slotTime).toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    slots.push({ slot: i, time: timeStr, cpu: null, memory: null });
+  }
+  
+  // Place actual data into the appropriate slots
+  for (const point of data) {
+    const slotIndex = Math.floor((point.timestamp - windowStart) / slotDuration);
+    if (slotIndex >= 0 && slotIndex < NUM_SLOTS) {
+      slots[slotIndex] = {
+        slot: slotIndex,
+        time: point.time.slice(0, 5), // HH:MM only for display
+        cpu: point.cpu,
+        memory: point.memory,
+      };
+    }
+  }
+  
+  return slots;
+}
+
 /** System Resources chart component */
 const SystemResourcesChart = memo(function SystemResourcesChart({ 
   data,
 }: { 
   data: ResourceDataPoint[];
 }) {
+  // Build fixed 20-minute window data
+  const chartData = buildFixedWindowData(data);
+  
+  // Show X-axis ticks at 5-minute intervals (every ~100 slots at 3s polling)
+  const tickInterval = Math.floor(NUM_SLOTS / 4);
 
   if (data.length === 0) {
     return (
@@ -291,7 +336,7 @@ const SystemResourcesChart = memo(function SystemResourcesChart({
   return (
     <div className="h-48">
       <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={data}>
+        <AreaChart data={chartData}>
           <defs>
             <linearGradient id="cpuGradient" x1="0" y1="0" x2="0" y2="1">
               <stop offset="5%" stopColor={CPU_COLOR} stopOpacity={0.4} />
@@ -313,36 +358,40 @@ const SystemResourcesChart = memo(function SystemResourcesChart({
             tickLine={false}
             tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10, fontFamily: 'var(--font-mono)' }}
             dy={8}
-            interval="preserveStartEnd"
+            interval={tickInterval}
           />
           <YAxis
             domain={[0, 100]}
             axisLine={false}
             tickLine={false}
             tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }}
-            dx={-8}
-            width={32}
+            dx={-4}
+            width={40}
             tickFormatter={(v) => `${v}%`}
           />
           <Tooltip content={<ResourcesTooltip />} />
           <Legend content={<ResourcesLegend />} />
           <Area
-            type="monotone"
+            type="stepAfter"
             dataKey="cpu"
             name="CPU"
             stroke={CPU_COLOR}
             strokeWidth={2}
             fill="url(#cpuGradient)"
+            fillOpacity={0.85}
             isAnimationActive={false}
+            connectNulls={false}
           />
           <Area
-            type="monotone"
+            type="stepAfter"
             dataKey="memory"
             name="Memory"
             stroke={MEMORY_COLOR}
             strokeWidth={2}
             fill="url(#memoryGradient)"
+            fillOpacity={0.85}
             isAnimationActive={false}
+            connectNulls={false}
           />
         </AreaChart>
       </ResponsiveContainer>
