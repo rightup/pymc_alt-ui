@@ -20,7 +20,6 @@ pymc_console is a **dashboard that plugs into** [pyMC_Repeater](https://github.c
 - **Maps**: Leaflet / react-leaflet
 - **Icons**: lucide-react
 - **Installer**: Bash with whiptail/dialog TUI
-- **Monitoring**: Grafana + Prometheus (optional Docker stack)
 
 ## Repository Structure
 
@@ -28,12 +27,11 @@ pymc_console is a **dashboard that plugs into** [pyMC_Repeater](https://github.c
 pymc_console/
 ├── frontend/              # Next.js dashboard (static export)
 │   ├── src/               # Source code
-│   └── out/               # Built static files (after npm run build)
+│   └── out/               # Built static files (committed to git)
 ├── manage.sh              # Main installer/manager script (TUI)
-├── install.sh             # Legacy installer (deprecated)
-├── monitoring/            # Grafana + Prometheus configs
-├── docker-compose.yml     # Container orchestration
-└── nextjs-static-serving.patch  # Upstream patch for pyMC_Repeater
+├── README.md              # User documentation
+├── WARP.md                # Developer documentation
+└── LICENSE
 ```
 
 ## Development Commands
