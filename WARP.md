@@ -230,6 +230,18 @@ docker-compose up -d prometheus grafana  # Monitoring only
 
 ## Common Tasks
 
+**Development workflow (IMPORTANT):**
+After making frontend changes, you MUST rebuild the static export before pushing:
+```bash
+cd frontend
+npm run build      # Rebuilds frontend/out/ with latest changes
+cd ..
+git add -A
+git commit -m "your message"
+git push
+```
+The `frontend/out/` directory is committed to git and deployed to the Pi. Without rebuilding, your changes won't take effect.
+
 **Build and test static export locally:**
 ```bash
 cd frontend
