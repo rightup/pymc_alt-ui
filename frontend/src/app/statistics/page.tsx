@@ -10,7 +10,7 @@ import type { BucketedStats, UtilizationStats, NoiseFloorHistoryItem } from '@/l
 import { TimeRangeSelector } from '@/components/shared/TimeRangeSelector';
 import { usePolling } from '@/lib/hooks/usePolling';
 import { PacketTypesChart } from '@/components/charts/PacketTypesChart';
-import { TrafficStackedChart, useMaxRxUtil } from '@/components/charts/TrafficStackedChart';
+import { TrafficStackedChart, useRxUtilStats } from '@/components/charts/TrafficStackedChart';
 import { NeighborPolarChart } from '@/components/charts/NeighborPolarChart';
 import { NoiseFloorHeatmap } from '@/components/charts/NoiseFloorHeatmap';
 import { STATISTICS_TIME_RANGES } from '@/lib/constants';
@@ -153,8 +153,18 @@ const [selectedRange, setSelectedRange] = useState(1); // Default to 3h
 
   const currentRange = STATISTICS_TIME_RANGES[selectedRange];
   
-  // Get max RX util for the current time period
-  const maxRxUtil = useMaxRxUtil(utilizationStats?.bins);
+  // Get radio config for utilization calculation
+  const spreadingFactor = stats?.config?.radio?.spreading_factor ?? 8;
+  const bandwidthKhz = stats?.config?.radio?.bandwidth ?? 125;
+  
+  // Get RX util stats (max and mean) for the current time period
+  const rxUtilStats = useRxUtilStats(
+    utilizationStats?.bins,
+    bucketedStats?.received,
+    bucketedStats?.bucket_duration_seconds,
+    spreadingFactor,
+    bandwidthKhz
+  );
 
   return (
     <div className="section-gap">
@@ -190,11 +200,16 @@ const [selectedRange, setSelectedRange] = useState(1); // Default to 3h
               <div className="flex items-center gap-2 mb-6">
                 <TrendingUp className="w-5 h-5 text-accent-primary" />
                 <h2 className="type-subheading text-text-primary">Traffic Flow</h2>
-                <div className="ml-auto flex items-center gap-3">
-                  {maxRxUtil > 0 && (
-                    <span className="type-data-xs text-text-muted">
-                      Max RX Util <span className="text-text-secondary tabular-nums font-medium">{maxRxUtil.toFixed(1)}%</span>
-                    </span>
+                <div className="ml-auto flex items-center gap-4">
+                  {(rxUtilStats.max > 0 || rxUtilStats.mean > 0) && (
+                    <>
+                      <span className="type-data-xs text-text-muted">
+                        Max <span className="text-text-secondary tabular-nums font-medium">{rxUtilStats.max.toFixed(1)}%</span>
+                      </span>
+                      <span className="type-data-xs text-text-muted">
+                        Mean <span className="text-text-secondary tabular-nums font-medium">{rxUtilStats.mean.toFixed(1)}%</span>
+                      </span>
+                    </>
                   )}
                   <span className="pill-tag">{currentRange.label}</span>
                 </div>
@@ -204,10 +219,10 @@ const [selectedRange, setSelectedRange] = useState(1); // Default to 3h
                   received={bucketedStats.received}
                   forwarded={bucketedStats.forwarded}
                   dropped={bucketedStats.dropped}
-                  transmitted={bucketedStats.transmitted}
                   utilizationBins={utilizationStats?.bins}
-                  txUtilization={stats?.utilization_percent ?? 0}
-                  rxUtilization={(stats?.rx_per_hour ?? 0) / 10} // Rough estimate (fallback)
+                  bucketDurationSeconds={bucketedStats.bucket_duration_seconds}
+                  spreadingFactor={spreadingFactor}
+                  bandwidthKhz={bandwidthKhz}
                 />
               ) : (
                 <div className="h-80 flex items-center justify-center text-text-muted">
