@@ -10,8 +10,9 @@ import { SimpleTooltip } from '@/components/charts/ChartTooltip';
 import { formatUptime } from '@/lib/format';
 import { DASHBOARD_TIME_RANGES, METRIC_COLORS, POLLING_INTERVALS } from '@/lib/constants';
 import { getBucketedStats, type BucketedStats, type BucketData } from '@/lib/api';
-import { Home, Radio, TrendingUp, ArrowUpRight, Send, XCircle, Clock } from 'lucide-react';
+import { Home, Radio, TrendingUp, ArrowUpRight, XCircle, Clock } from 'lucide-react';
 import { HashBadge } from '@/components/ui/HashBadge';
+import { TxDelayCard } from '@/components/stats/TxDelayCard';
 import {
   AreaChart,
   Area,
@@ -213,15 +214,7 @@ export default function Dashboard() {
           timeRangeLabel={currentRange.label}
           icon={<ArrowUpRight className="w-4 h-4" />}
         />
-        <StatsCard
-          title="TRANSMITTED"
-          value={stats?.tx_count ?? 0}
-          subtitle="Packets sent to air"
-          color="transmitted"
-          buckets={bucketedStats?.transmitted}
-          timeRangeLabel={currentRange.label}
-          icon={<Send className="w-4 h-4" />}
-        />
+        <TxDelayCard stats={stats} />
         <StatsCard
           title="DROPPED"
           value={stats?.dropped_count ?? 0}
