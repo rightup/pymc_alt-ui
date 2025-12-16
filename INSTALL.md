@@ -20,3 +20,25 @@ sudo chmod -R 755 /var/www/html/pymc-ui
 # Clean up
 rm pymc-ui-latest.tar.gz
 ```
+
+---
+
+## Quick Update
+
+To update an existing installation to the latest version:
+
+```bash
+# Download latest version
+cd /tmp
+wget https://github.com/rightup/pymc_alt-ui/releases/latest/download/pymc-ui-latest.tar.gz
+
+# Backup and update
+sudo cp -r /var/www/html/pymc-ui /var/www/html/pymc-ui.backup
+sudo rm -rf /var/www/html/pymc-ui/*
+sudo tar -xzf pymc-ui-latest.tar.gz -C /var/www/html/pymc-ui/
+sudo chown -R www-data:www-data /var/www/html/pymc-ui
+sudo chmod -R 755 /var/www/html/pymc-ui
+
+# Clean up
+rm pymc-ui-latest.tar.gz
+```
