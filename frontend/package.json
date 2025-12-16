@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build --webpack",
+    "build:static": "npm run build && npm run package",
+    "package": "rm -rf dist && mkdir -p dist && cp -r out/* dist/",
     "export": "npm run build",
     "lint": "eslint"
   },

@@ -15,10 +15,13 @@
 
 # next.js
 /.next/
-# /out/ - NOT ignored: we commit static build for deployment
+/out/
 
 # production
 /build
+/dist/
+*.tar.gz
+*.zip
 
 # misc
 .DS_Store
