@@ -42,6 +42,9 @@ jobs:
           cd dist
           tar -czf ../pymc-ui-${{ github.ref_name }}.tar.gz .
           zip -r ../pymc-ui-${{ github.ref_name }}.zip .
+          # Also create 'latest' versions for easy download
+          tar -czf ../pymc-ui-latest.tar.gz .
+          zip -r ../pymc-ui-latest.zip .
       
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -80,5 +83,7 @@ jobs:
           draft: false
           prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
           generate_release_notes: true
+          # Mark as latest release (allows /latest/ download URL)
+          make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
