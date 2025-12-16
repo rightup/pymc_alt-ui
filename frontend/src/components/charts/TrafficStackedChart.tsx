@@ -31,8 +31,8 @@ interface TrafficStackedChartProps {
 // Legend order: RX Util, Received, Forwarded, Dropped
 const LEGEND_ORDER = ['RX Util', 'Received', 'Forwarded', 'Dropped'];
 
-// Simple moving average window (number of periods) - increased for smoother curve
-const SMA_WINDOW = 8;
+// Simple moving average window (number of periods) - high value for very smooth curve
+const SMA_WINDOW = 24;
 
 /** Apply simple moving average - averages the previous N periods */
 function simpleMovingAverage(data: number[], window: number): number[] {
@@ -99,7 +99,7 @@ function TrafficStackedChartComponent({
   const metricColors = useMetricColors();
   
   // Derived colors from theme
-  const RX_UTIL_COLOR = 'rgba(160,160,180,0.6)'; // Mid-gray for RX util
+  const RX_UTIL_COLOR = '#F9D26F'; // Yellow/amber for RX util
   const RECEIVED_COLOR = metricColors.received; // Green
   const FORWARDED_COLOR = metricColors.forwarded; // Blue
   const DROPPED_COLOR = chartColors.chart5; // Theme accent
@@ -297,8 +297,8 @@ function TrafficStackedChartComponent({
             type="monotoneX"
             dataKey="rxUtil"
             name="RX Util"
-            stroke="rgba(140,140,160,0.7)"
-            strokeWidth={2}
+            stroke={RX_UTIL_COLOR}
+            strokeWidth={1}
             fill="url(#rxUtilGradient)"
             fillOpacity={1}
             dot={false}
@@ -306,7 +306,7 @@ function TrafficStackedChartComponent({
             baseValue={0}
           />
           
-          {/* Stacked stepped areas for traffic - rendered on top of RX util */}
+          {/* Stacked stepped areas for traffic - 100% opacity to fully cover RX util */}
           <Area
             yAxisId="left"
             type="stepAfter"
@@ -315,7 +315,7 @@ function TrafficStackedChartComponent({
             stackId="traffic"
             fill={DROPPED_COLOR}
             stroke="none"
-            fillOpacity={0.85}
+            fillOpacity={1}
             isAnimationActive={false}
           />
           <Area
@@ -326,7 +326,7 @@ function TrafficStackedChartComponent({
             stackId="traffic"
             fill={FORWARDED_COLOR}
             stroke="none"
-            fillOpacity={0.85}
+            fillOpacity={1}
             isAnimationActive={false}
           />
           <Area
@@ -337,7 +337,7 @@ function TrafficStackedChartComponent({
             stackId="traffic"
             fill={RECEIVED_COLOR}
             stroke="none"
-            fillOpacity={0.85}
+            fillOpacity={1}
             isAnimationActive={false}
           />
         </ComposedChart>
