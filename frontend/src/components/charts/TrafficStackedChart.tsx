@@ -31,8 +31,8 @@ interface TrafficStackedChartProps {
 // Legend order: RX Util, Received, Forwarded, Dropped
 const LEGEND_ORDER = ['RX Util', 'Received', 'Forwarded', 'Dropped'];
 
-// Simple moving average window (number of periods)
-const SMA_WINDOW = 4;
+// Simple moving average window (number of periods) - increased for smoother curve
+const SMA_WINDOW = 8;
 
 /** Apply simple moving average - averages the previous N periods */
 function simpleMovingAverage(data: number[], window: number): number[] {
@@ -99,7 +99,7 @@ function TrafficStackedChartComponent({
   const metricColors = useMetricColors();
   
   // Derived colors from theme
-  const AIRTIME_RX_COLOR = 'rgba(255,255,255,0.9)'; // White for RX util line
+  const RX_UTIL_COLOR = 'rgba(160,160,180,0.6)'; // Mid-gray for RX util
   const RECEIVED_COLOR = metricColors.received; // Green
   const FORWARDED_COLOR = metricColors.forwarded; // Blue
   const DROPPED_COLOR = chartColors.chart5; // Theme accent
@@ -248,6 +248,12 @@ function TrafficStackedChartComponent({
     <div className="h-80">
       <ResponsiveContainer width="100%" height={320}>
         <ComposedChart data={chartData}>
+          <defs>
+            <linearGradient id="rxUtilGradient" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor={RX_UTIL_COLOR} stopOpacity={0.4} />
+              <stop offset="95%" stopColor={RX_UTIL_COLOR} stopOpacity={0.05} />
+            </linearGradient>
+          </defs>
           <CartesianGrid
             strokeDasharray="3 3"
             stroke="rgba(255,255,255,0.06)"
@@ -285,7 +291,22 @@ function TrafficStackedChartComponent({
           <Tooltip content={<CustomTooltip />} />
           <Legend content={<TrafficLegend />} />
           
-          {/* Stacked stepped areas for traffic - purples/blues so util lines pop */}
+          {/* RX Utilization area - rendered FIRST so it's behind the traffic bars */}
+          <Area
+            yAxisId="right"
+            type="monotoneX"
+            dataKey="rxUtil"
+            name="RX Util"
+            stroke="rgba(140,140,160,0.7)"
+            strokeWidth={2}
+            fill="url(#rxUtilGradient)"
+            fillOpacity={1}
+            dot={false}
+            isAnimationActive={false}
+            baseValue={0}
+          />
+          
+          {/* Stacked stepped areas for traffic - rendered on top of RX util */}
           <Area
             yAxisId="left"
             type="stepAfter"
@@ -317,18 +338,6 @@ function TrafficStackedChartComponent({
             fill={RECEIVED_COLOR}
             stroke="none"
             fillOpacity={0.85}
-            isAnimationActive={false}
-          />
-          
-          {/* RX Utilization line - uses right axis (%) but visually correlates with packets */}
-          <Line
-            yAxisId="right"
-            type="monotone"
-            dataKey="rxUtil"
-            name="RX Util"
-            stroke={AIRTIME_RX_COLOR}
-            strokeWidth={3}
-            dot={false}
             isAnimationActive={false}
           />
         </ComposedChart>
